@@ -1,5 +1,5 @@
-export default async function handler(req, res) {
-  const { url } = req.query;
+module.exports = async function handler(req, res) {
+  const url = req.query.url;
 
   if (!url) {
     return res.status(400).json({ error: 'Missing url parameter' });
@@ -43,10 +43,3 @@ export default async function handler(req, res) {
     res.status(500).json({ error: 'Fetch failed: ' + e.message });
   }
 }
-
-
-
-
-
-
-

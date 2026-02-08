@@ -90,6 +90,42 @@ body.dark .srcBtn.on{background:#2563eb;color:#fff}
 /* Share button in cards */
 .share-btn{background:none;border:none;font-size:13px;cursor:pointer;padding:2px;opacity:.6;transition:.2s}
 .share-btn:hover{opacity:1}
+/* Layer controls */
+#layerBtns{position:absolute;top:10px;right:10px;z-index:500;display:flex;flex-direction:row;gap:4px}
+#layerBtns button{width:36px;height:36px;border-radius:50%;background:var(--bg2);border:1px solid var(--brd);font-size:16px;cursor:pointer;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;transition:.2s;padding:0;line-height:1}
+#layerBtns button:hover{border-color:var(--ac);background:#eff6ff}
+#layerBtns button.on{background:#2563eb;border-color:#2563eb;box-shadow:0 0 8px rgba(37,99,235,.3)}
+/* Dashboard styles */
+.dash-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px}
+.dash-card{background:var(--card);border:1px solid var(--brd);border-radius:8px;padding:10px;text-align:center;box-shadow:var(--shadow)}
+.dash-val{font-size:22px;font-weight:800;color:var(--ac)}
+.dash-label{font-size:10px;color:var(--tx2);margin-top:2px}
+.dash-section{background:var(--card);border:1px solid var(--brd);border-radius:8px;padding:10px;margin-bottom:8px;font-size:12px;box-shadow:var(--shadow)}
+.dash-section b{display:block;margin-bottom:6px}
+.dash-timeline{display:flex;align-items:flex-end;gap:2px;height:55px;padding:4px 0}
+.dash-bar{width:100%;min-width:4px;border-radius:2px 2px 0 0;transition:.3s}
+.dash-table{width:100%;border-collapse:collapse;font-size:11px}
+.dash-table th{text-align:right;padding:4px 6px;border-bottom:1px solid var(--brd);color:var(--tx2);font-weight:600}
+.dash-table td{padding:4px 6px;border-bottom:1px solid rgba(0,0,0,.04)}
+.dash-info{font-size:11px;color:var(--tx2);padding:2px 0}
+.dash-btn{padding:4px 10px;font-size:11px;border:1px solid var(--brd);border-radius:6px;background:var(--card);cursor:pointer;font-family:inherit;transition:.2s}
+.dash-btn:hover{border-color:var(--ac);background:#eff6ff}
+/* Wadi flood zone lines */
+.wadi-line{stroke-linecap:round}
+/* Dark mode additions */
+body.dark #layerBtns button{background:#1f2937;border-color:#374151}
+body.dark #layerBtns button:hover{background:#374151}
+body.dark #layerBtns button.on{background:#2563eb;border-color:#2563eb}
+body.dark .dash-card{background:#1f2937;border-color:#374151}
+body.dark .dash-section{background:#1f2937;border-color:#374151}
+body.dark .dash-btn{background:#1f2937;border-color:#374151;color:#9ca3af}
+@media(prefers-color-scheme:dark){
+  #layerBtns button{background:#1f2937;border-color:#374151}
+  #layerBtns button.on{background:#2563eb;border-color:#2563eb}
+  .dash-card{background:#1f2937;border-color:#374151}
+  .dash-section{background:#1f2937;border-color:#374151}
+  .dash-btn{background:#1f2937;border-color:#374151;color:#9ca3af}
+}
 
 
 

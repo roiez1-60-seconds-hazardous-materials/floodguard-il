@@ -61,3 +61,39 @@ body{font-family:'Heebo',sans-serif;background:var(--bg);color:var(--tx);height:
   #sidebar{width:100%;height:45vh;border-right:none;border-top:1px solid var(--brd)}
   #mapWrap{height:55vh}
 }
+/* Dark mode — auto by time or prefers-color-scheme */
+@media(prefers-color-scheme:dark){
+  :root{--bg:#111827;--bg2:#1f2937;--card:#1f2937;--brd:#374151;--tx:#f3f4f6;--tx2:#9ca3af;--ac:#3b82f6;--shadow:0 1px 3px rgba(0,0,0,.3)}
+  #mapBtns button{background:#1f2937;color:#f3f4f6;border-color:#374151}
+  #mapBtns button:hover{background:#374151}
+  #mapBtns button.on{background:#2563eb;color:#fff}
+  #legend{background:#1f2937}
+  #search{background:#1f2937;color:#f3f4f6;border-color:#374151}
+  #dropZone{background:#1f2937;border-color:#374151}
+  .srcBtn{background:#1f2937;color:#9ca3af;border-color:#374151}
+  .srcBtn.on{background:#2563eb;color:#fff}
+}
+body.dark{--bg:#111827;--bg2:#1f2937;--card:#1f2937;--brd:#374151;--tx:#f3f4f6;--tx2:#9ca3af;--ac:#3b82f6;--shadow:0 1px 3px rgba(0,0,0,.3)}
+body.dark #mapBtns button{background:#1f2937;color:#f3f4f6;border-color:#374151}
+body.dark #mapBtns button:hover{background:#374151}
+body.dark #mapBtns button.on{background:#2563eb;color:#fff}
+body.dark #legend{background:#1f2937}
+body.dark #search{background:#1f2937;color:#f3f4f6;border-color:#374151}
+body.dark #dropZone{background:#1f2937;border-color:#374151}
+body.dark .srcBtn{background:#1f2937;color:#9ca3af;border-color:#374151}
+body.dark .srcBtn.on{background:#2563eb;color:#fff}
+/* Animation player bar */
+#animBar{position:absolute;bottom:10px;right:10px;left:220px;z-index:500;background:var(--card);border:1px solid var(--brd);border-radius:8px;padding:6px 10px;display:none;align-items:center;gap:8px;box-shadow:var(--shadow);font-size:11px}
+#animBar button{background:none;border:none;font-size:16px;cursor:pointer;padding:2px 4px}
+#animSlider{flex:1;height:4px;cursor:pointer;accent-color:var(--ac)}
+#animTime{color:var(--tx2);min-width:50px;text-align:center}
+/* Share button in cards */
+.share-btn{background:none;border:none;font-size:13px;cursor:pointer;padding:2px;opacity:.6;transition:.2s}
+.share-btn:hover{opacity:1}
+
+
+
+
+
+
+

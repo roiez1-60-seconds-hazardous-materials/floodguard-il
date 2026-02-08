@@ -72,17 +72,16 @@ var imsOverlay = null;
 var radarImageData = null; // stored for analysis
 
 function riskColor(r) {
-  if(r>=75) return '#ef4444';
-  if(r>=60) return '#f59e0b';
-  if(r>=45) return '#3b82f6';
-  return '#22c55e';
+  // Default: subtle gray dot — risk level only shown in popup/list
+  // Alert colors are set by alertIcon() during analysis
+  return '#9ca3af';
 }
 
 function mkIcon(color, sz) {
-  sz = sz || 10;
+  sz = sz || 8;
   return L.divIcon({
     className:'',
-    html:'<div style="width:'+sz+'px;height:'+sz+'px;background:'+color+';border:2px solid rgba(0,0,0,.3);border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,.3)"></div>',
+    html:'<div style="width:'+sz+'px;height:'+sz+'px;background:'+color+';border:1.5px solid rgba(0,0,0,.2);border-radius:50%;box-shadow:0 0 2px rgba(0,0,0,.2)"></div>',
     iconSize:[sz,sz], iconAnchor:[sz/2,sz/2]
   });
 }
@@ -170,6 +169,7 @@ function loadIMSRadar() {
 
 function tryLoadImage(baseProxyUrl, attempt) {
   if(attempt > 5) {
+    console.warn('📡 [שמ"ט] כל 6 הניסיונות נכשלו (30 דקות אחורה)');
     setStatus('⚠️ לא נמצאה תמונת מכ"מ עדכנית');
     return;
   }
@@ -185,9 +185,12 @@ function tryLoadImage(baseProxyUrl, attempt) {
   var imsUrl = IMS_RADAR_BASE + ts + '_0.png';
   var proxyUrl = PROXY_BASE + '?url=' + encodeURIComponent(imsUrl);
   
+  console.log('📡 [שמ"ט] ניסיון ' + (attempt+1) + '/6: ' + ts + ' (' + imsUrl + ')');
+  
   var img = new Image();
   img.crossOrigin = 'anonymous';
   img.onload = function() {
+    console.log('📡 [שמ"ט] ✅ נמצאה תמונה! timestamp=' + ts + ', גודל=' + img.width + 'x' + img.height);
     // Success! Show on map
     if(imsOverlay) map.removeLayer(imsOverlay);
     imsOverlay = L.imageOverlay(img.src, IMS_BOUNDS, {opacity: 0.6}).addTo(map);
@@ -201,7 +204,8 @@ function tryLoadImage(baseProxyUrl, attempt) {
     
     // Show timestamp
     var localTime = now.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
-    document.getElementById('radarTimeVal').textContent = localTime + ' UTC';
+    var ageMin = attempt * 5;
+    document.getElementById('radarTimeVal').textContent = localTime + ' UTC (לפני ~' + ageMin + ' דק\')';
     document.getElementById('radarTime').style.display = 'block';
     document.getElementById('btnRefresh').style.display = 'block';
     
@@ -211,6 +215,7 @@ function tryLoadImage(baseProxyUrl, attempt) {
     debugColorTable(radarImageData, 'IMS Radar ' + ts);
   };
   img.onerror = function() {
+    console.log('📡 [שמ"ט] ❌ ' + ts + ' לא נמצא, מנסה ישן יותר...');
     // Try older timestamp
     tryLoadImage(baseProxyUrl, attempt + 1);
   };
@@ -232,11 +237,16 @@ var rvTimestamp = null;
 
 function loadRainViewer() {
   setStatus('🌧️ טוען RainViewer...');
+  console.log('🌧️ [RainViewer] שולח בקשה ל-API...');
   
   fetch('https://api.rainviewer.com/public/weather-maps.json')
-    .then(function(r) { return r.json(); })
+    .then(function(r) { 
+      console.log('🌧️ [RainViewer] API status:', r.status);
+      return r.json(); 
+    })
     .then(function(data) {
       if(!data.radar || !data.radar.past || data.radar.past.length === 0) {
+        console.warn('🌧️ [RainViewer] אין frames זמינים');
         setStatus('⚠️ RainViewer — אין נתונים זמינים');
         return;
       }
@@ -245,6 +255,13 @@ function loadRainViewer() {
       rvTimestamp = latest.time;
       var host = data.host || 'https://tilecache.rainviewer.com';
       var path = latest.path;
+      
+      var radarTime = new Date(rvTimestamp * 1000);
+      var ageMin = Math.round((Date.now() - radarTime.getTime()) / 60000);
+      console.log('🌧️ [RainViewer] Frame אחרון:', radarTime.toISOString(), '(לפני ' + ageMin + ' דקות)');
+      console.log('🌧️ [RainViewer] Host:', host);
+      console.log('🌧️ [RainViewer] Path:', path);
+      console.log('🌧️ [RainViewer] סה"כ frames זמינים:', data.radar.past.length);
       
       // Add color tile layer for display (scheme 2 = Universal Blue)
       if(rvTileLayer) map.removeLayer(rvTileLayer);
@@ -255,18 +272,17 @@ function loadRainViewer() {
         maxZoom: 7 // free tier limit since Jan 2026
       }).addTo(map);
       
-      // Also fetch a composite image for pixel analysis
-      // Use BW scheme (color=0) for direct dBZ decode
-      var bwTileUrl = host + path + '/256/{z}/{x}/{y}/0/0_0.png';
+      // Fetch tiles for pixel analysis
       fetchRainViewerForAnalysis(host, path);
       
       var t = new Date(rvTimestamp * 1000).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
-      document.getElementById('radarTimeVal').textContent = t + ' (RainViewer)';
+      document.getElementById('radarTimeVal').textContent = t + ' (RainViewer, לפני ' + ageMin + ' דק\')';
       document.getElementById('radarTime').style.display = 'block';
       document.getElementById('btnRefresh').style.display = 'block';
-      setStatus('🌧️ RainViewer נטען — ' + t);
+      setStatus('🌧️ RainViewer נטען — ' + t + ' (לפני ' + ageMin + ' דק\')');
     })
     .catch(function(e) {
+      console.error('🌧️ [RainViewer] שגיאה:', e);
       setStatus('⚠️ RainViewer שגיאה: ' + e.message);
     });
 }
@@ -715,6 +731,11 @@ function analyze() {
     return; 
   }
 
+  console.log('⚡ [ניתוח] מתחיל ניתוח...');
+  console.log('⚡ [ניתוח] מקור:', radarSource);
+  console.log('⚡ [ניתוח] גודל תמונה:', radarImageData.width + 'x' + radarImageData.height);
+  console.log('⚡ [ניתוח] bounds:', JSON.stringify(analysisBounds));
+
   var btn = document.getElementById('btnRun');
   btn.textContent = '⏳ מנתח...';
   btn.disabled = true;
@@ -727,6 +748,10 @@ function analyze() {
       var stats = sampleRadarAtLocation(radarImageData, s.la, s.lo, 6);
       var score = computeAlertScore(stats, s.r);
       var mmhr = score.effective;
+      // Log settlements with any rain
+      if(stats.avgMmHr > 0.5) {
+        console.log('⚡ [ניתוח] ' + s.n + ': avg=' + stats.avgMmHr.toFixed(1) + ' max=' + stats.maxMmHr.toFixed(1) + ' P90=' + stats.p90MmHr.toFixed(1) + ' cover=' + (stats.coverage*100).toFixed(0) + '% → effective=' + mmhr.toFixed(1) + ' mm/hr');
+      }
       var detail = {
         avgMm: stats.avgMmHr.toFixed(1),
         maxMm: stats.maxMmHr.toFixed(1),
@@ -809,11 +834,21 @@ function setUploadSrc(src) {
   uploadSrcChoice = src;
   document.querySelectorAll('.srcBtn').forEach(function(b){b.classList.remove('on')});
   document.getElementById(src==='ims'?'srcIms':src==='govmap'?'srcGov':'srcRv').classList.add('on');
+  var units = {
+    ims: '📏 שמ"ט: מ"מ/שעה (mm/hr) — ללא המרה',
+    govmap: '📏 GovMap: מ"מ/10 דקות (mm/10min) — מוכפל ב-6 למ"מ/שעה',
+    rainviewer: '📏 RainViewer: dBZ (עוצמת החזר) — ממיר ל-מ"מ/שעה לפי Marshall-Palmer'
+  };
+  document.getElementById('srcUnits').textContent = units[src];
 }
 
 // ============================================================
-// FILE UPLOAD
+// FILE UPLOAD — with interactive geo-calibration
 // ============================================================
+var uploadImageUrl = null;
+var calibMarkers = [];
+var calibBounds = null;
+
 function onUpload(ev) {
   var file = ev.target.files[0];
   if(!file) return;
@@ -826,47 +861,131 @@ function onUpload(ev) {
       c.width = img.width; c.height = img.height;
       ctx.drawImage(img,0,0);
       
-      // Store as radar data for analysis
+      // Store image data
       radarImageData = ctx.getImageData(0,0,c.width,c.height);
+      uploadImageUrl = e.target.result;
       
-      // Also overlay on map
-      if(imsOverlay) map.removeLayer(imsOverlay);
-      imsOverlay = L.imageOverlay(e.target.result, IMS_BOUNDS, {opacity:0.6}).addTo(map);
-      
-      // Set radar source based on user selection
+      // Set source
       activeSrc = 'upload';
       radarSource = uploadSrcChoice;
       
-      var scaleLabel = radarSource==='govmap' ? 'מ"מ/10 דק\'' : radarSource==='rainviewer' ? 'Universal Blue (dBZ)' : 'שמ"ט (dBZ)';
+      // Place image on map with default bounds
+      var defaultBounds = [[29.5, 34.0], [33.5, 36.0]];
+      if(imsOverlay) map.removeLayer(imsOverlay);
+      imsOverlay = L.imageOverlay(uploadImageUrl, defaultBounds, {
+        opacity: 0.55,
+        interactive: false
+      }).addTo(map);
       
-      // Count colored pixels
-      var d = radarImageData.data;
-      var red=0, org=0, ylw=0, grn=0, tot=c.width*c.height;
-      for(var i=0;i<d.length;i+=4) {
-        if(d[i+3]<100) continue;
-        var r=d[i], g=d[i+1], b=d[i+2];
-        if(r>200&&g<80&&b<80) red++;
-        else if(r>200&&g>100&&g<180&&b<80) org++;
-        else if(r>200&&g>200&&b<100) ylw++;
-        else if(g>150&&r<100&&b<100) grn++;
-      }
+      // Start calibration mode
+      startCalibration(defaultBounds);
       
+      debugColorTable(radarImageData, 'Upload: ' + radarSource);
+      
+      var scaleLabel = radarSource==='govmap' ? 'מ"מ/10 דק\'' : radarSource==='rainviewer' ? 'dBZ' : 'שמ"ט';
       document.getElementById('uploadRes').innerHTML =
         '<div style="background:var(--card);border:1px solid var(--brd);border-radius:8px;padding:12px;font-size:12px;line-height:1.8;margin-top:8px">'+
-        '<b>תוצאות סריקה</b> — סקלה: '+scaleLabel+'<br>'+
-        '📐 '+img.width+'×'+img.height+' פיקסלים<br>'+
-        '🔴 כבד מאוד (40+): '+red.toLocaleString()+' px<br>'+
-        '🟠 חזק (25-40): '+org.toLocaleString()+' px<br>'+
-        '🟡 בינוני (15-25): '+ylw.toLocaleString()+' px<br>'+
-        '🟢 קל: '+grn.toLocaleString()+' px<br>'+
-        '<div style="margin-top:6px;padding:6px;background:rgba(59,130,246,.1);border-radius:6px;color:var(--ac)">'+
-        '💡 התמונה הוצבה על המפה. לחץ "⚡ נתח" לניתוח מלא</div></div>';
+        '<b>📐 מצב כיול</b><br>'+
+        'גרור את <b style="color:#dc2626">⬤ הפין האדום</b> (צפון-מערב) ו-<b style="color:#2563eb">⬤ הפין הכחול</b> (דרום-מזרח) '+
+        'כדי ליישר את התמונה עם המפה.<br>'+
+        '<div style="margin-top:8px;display:flex;gap:6px;">'+
+        '<button onclick="finishCalibration()" style="flex:1;padding:8px;background:#22c55e;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer">✅ סיימתי — נתח</button>'+
+        '<button onclick="cancelCalibration()" style="padding:8px;background:#ef4444;color:#fff;border:none;border-radius:6px;cursor:pointer">✖ בטל</button>'+
+        '</div>'+
+        '<div style="margin-top:6px;font-size:11px;color:var(--tx2)">סקלה: '+scaleLabel+'</div>'+
+        '</div>';
       
-      setStatus('📤 תמונה הועלתה ('+scaleLabel+') — מוכנה לניתוח');
+      setStatus('📐 מצב כיול — גרור את הפינים ליישור התמונה');
     };
     img.src = e.target.result;
   };
   reader.readAsDataURL(file);
+}
+
+function startCalibration(bounds) {
+  // Remove old calibration markers
+  clearCalibMarkers();
+  
+  var nw = L.latLng(bounds[1][0], bounds[0][1]); // north-west (top-left)
+  var se = L.latLng(bounds[0][0], bounds[1][1]); // south-east (bottom-right)
+  
+  // NW marker (red) — top-left corner
+  var nwIcon = L.divIcon({
+    className: '',
+    html: '<div style="width:20px;height:20px;background:#dc2626;border:3px solid #fff;border-radius:50%;box-shadow:0 0 8px rgba(0,0,0,.5);cursor:grab"></div>',
+    iconSize: [20,20], iconAnchor: [10,10]
+  });
+  var nwMarker = L.marker(nw, {icon: nwIcon, draggable: true}).addTo(map);
+  nwMarker.bindTooltip('↖ צפון-מערב', {direction: 'right', permanent: false});
+  
+  // SE marker (blue) — bottom-right corner
+  var seIcon = L.divIcon({
+    className: '',
+    html: '<div style="width:20px;height:20px;background:#2563eb;border:3px solid #fff;border-radius:50%;box-shadow:0 0 8px rgba(0,0,0,.5);cursor:grab"></div>',
+    iconSize: [20,20], iconAnchor: [10,10]
+  });
+  var seMarker = L.marker(se, {icon: seIcon, draggable: true}).addTo(map);
+  seMarker.bindTooltip('↘ דרום-מזרח', {direction: 'left', permanent: false});
+  
+  // Update overlay on drag
+  function updateOverlay() {
+    var nwP = nwMarker.getLatLng();
+    var seP = seMarker.getLatLng();
+    var newBounds = [[seP.lat, nwP.lng], [nwP.lat, seP.lng]];
+    if(imsOverlay) {
+      map.removeLayer(imsOverlay);
+      imsOverlay = L.imageOverlay(uploadImageUrl, newBounds, {
+        opacity: 0.55,
+        interactive: false
+      }).addTo(map);
+    }
+    calibBounds = newBounds;
+  }
+  
+  nwMarker.on('drag', updateOverlay);
+  seMarker.on('drag', updateOverlay);
+  
+  calibMarkers = [nwMarker, seMarker];
+  calibBounds = bounds;
+}
+
+function clearCalibMarkers() {
+  calibMarkers.forEach(function(m) { map.removeLayer(m); });
+  calibMarkers = [];
+}
+
+function finishCalibration() {
+  if(!calibBounds || !radarImageData) return;
+  
+  // Set analysis bounds to calibrated bounds
+  analysisBounds[0][0] = calibBounds[0][0]; // south lat
+  analysisBounds[0][1] = calibBounds[0][1]; // west lon
+  analysisBounds[1][0] = calibBounds[1][0]; // north lat
+  analysisBounds[1][1] = calibBounds[1][1]; // east lon
+  
+  // Remove calibration markers
+  clearCalibMarkers();
+  
+  // Run analysis
+  analyze();
+  
+  document.getElementById('uploadRes').innerHTML =
+    '<div style="background:var(--card);border:1px solid var(--brd);border-radius:8px;padding:12px;font-size:12px;line-height:1.8;margin-top:8px">'+
+    '✅ כיול הושלם. גבולות: '+
+    calibBounds[0][0].toFixed(2)+'°N — '+calibBounds[1][0].toFixed(2)+'°N, '+
+    calibBounds[0][1].toFixed(2)+'°E — '+calibBounds[1][1].toFixed(2)+'°E'+
+    '</div>';
+  
+  setStatus('✅ כיול הושלם — ניתוח הופעל');
+}
+
+function cancelCalibration() {
+  clearCalibMarkers();
+  if(imsOverlay) { map.removeLayer(imsOverlay); imsOverlay = null; }
+  radarImageData = null;
+  activeSrc = null;
+  document.getElementById('uploadRes').innerHTML = '';
+  setStatus('ביטול העלאה');
 }
 
 // ============================================================
@@ -955,3 +1074,344 @@ function autoFetchAndAnalyze() {
 
 // === INIT ===
 renderList();
+
+// ============================================================
+// FEATURE 1: GEOLOCATION — "📍 מצא את המיקום שלי"
+// ============================================================
+var userLocationMarker = null;
+var userNearestSettlement = null;
+
+function locateMe() {
+  if(!navigator.geolocation) {
+    alert('הדפדפן לא תומך במיקום');
+    return;
+  }
+  setStatus('📍 מחפש מיקום...');
+  document.getElementById('btnLocate').textContent = '⏳';
+  
+  navigator.geolocation.getCurrentPosition(function(pos) {
+    var lat = pos.coords.latitude;
+    var lon = pos.coords.longitude;
+    console.log('📍 [מיקום] נמצא:', lat.toFixed(4), lon.toFixed(4));
+    
+    // Show user location on map
+    if(userLocationMarker) map.removeLayer(userLocationMarker);
+    userLocationMarker = L.marker([lat, lon], {
+      icon: L.divIcon({
+        className:'',
+        html:'<div style="width:16px;height:16px;background:#2563eb;border:3px solid #fff;border-radius:50%;box-shadow:0 0 8px rgba(37,99,235,.5)"></div>',
+        iconSize:[16,16], iconAnchor:[8,8]
+      })
+    }).addTo(map).bindPopup('<b>📍 המיקום שלך</b>');
+    
+    map.flyTo([lat, lon], 11);
+    
+    // Find nearest settlement
+    var minDist = Infinity;
+    S.forEach(function(s) {
+      var d = Math.sqrt(Math.pow(lat-s.la,2) + Math.pow(lon-s.lo,2));
+      if(d < minDist) { minDist = d; userNearestSettlement = s.n; }
+    });
+    
+    var distKm = (minDist * 111).toFixed(1);
+    console.log('📍 [מיקום] יישוב קרוב:', userNearestSettlement, '(' + distKm + ' ק"מ)');
+    
+    document.getElementById('btnLocate').textContent = '📍';
+    setStatus('📍 ' + userNearestSettlement + ' (' + distKm + ' ק"מ)');
+    
+    // If there's an active alert for nearest settlement, notify
+    if(alerts[userNearestSettlement]) {
+      var a = alerts[userNearestSettlement];
+      sendNotification('⚠️ התראת גשם ב' + userNearestSettlement, 
+        a.he + ' — ' + a.mm + ' מ"מ/שעה');
+    }
+    
+    // Highlight nearest settlement
+    if(markers[userNearestSettlement]) {
+      markers[userNearestSettlement].openPopup();
+    }
+  }, function(err) {
+    console.warn('📍 [מיקום] שגיאה:', err.message);
+    document.getElementById('btnLocate').textContent = '📍';
+    setStatus('📍 שגיאת מיקום: ' + err.message);
+  }, {enableHighAccuracy: true, timeout: 10000});
+}
+
+// ============================================================
+// FEATURE 2: NOWCASTING — frame history + motion prediction
+// ============================================================
+var frameHistory = []; // Array of {timestamp, imageData, bounds}
+var MAX_FRAMES = 8;
+var forecastResults = []; // predicted alerts per settlement
+
+// Store current frame to history (called after each successful analysis)
+function storeFrame() {
+  if(!radarImageData) return;
+  
+  var frame = {
+    timestamp: Date.now(),
+    imageData: radarImageData, // reference to current ImageData
+    bounds: [analysisBounds[0].slice(), analysisBounds[1].slice()]
+  };
+  
+  frameHistory.push(frame);
+  if(frameHistory.length > MAX_FRAMES) frameHistory.shift();
+  
+  console.log('🔮 [Nowcast] frame שמור, סה"כ:', frameHistory.length + '/' + MAX_FRAMES);
+  
+  // If we have at least 3 frames, run nowcast
+  if(frameHistory.length >= 3) {
+    runNowcast();
+  }
+}
+
+// Simple nowcast: compare rain intensity between frames to detect trends
+// For each settlement, check if rain is approaching (increasing) or leaving (decreasing)
+function runNowcast() {
+  if(frameHistory.length < 3) {
+    document.getElementById('forecastStatus').textContent = 
+      '⏳ צריך לפחות 3 פריימים (' + frameHistory.length + '/' + MAX_FRAMES + '). המתן...';
+    return;
+  }
+  
+  console.log('🔮 [Nowcast] מריץ תחזית עם ' + frameHistory.length + ' פריימים...');
+  forecastResults = [];
+  
+  S.forEach(function(s) {
+    var intensities = [];
+    
+    // Sample each frame at this settlement's location
+    frameHistory.forEach(function(frame) {
+      // Adjust bounds for this frame
+      var oldBounds = [analysisBounds[0].slice(), analysisBounds[1].slice()];
+      analysisBounds[0] = frame.bounds[0];
+      analysisBounds[1] = frame.bounds[1];
+      
+      var stats = sampleRadarAtLocation(frame.imageData, s.la, s.lo, 4);
+      intensities.push(stats.avgMmHr);
+      
+      // Restore bounds
+      analysisBounds[0] = oldBounds[0];
+      analysisBounds[1] = oldBounds[1];
+    });
+    
+    // Calculate trend: linear regression over intensities
+    var n = intensities.length;
+    var sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+    for(var i = 0; i < n; i++) {
+      sumX += i; sumY += intensities[i];
+      sumXY += i * intensities[i];
+      sumXX += i * i;
+    }
+    var slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    var avg = sumY / n;
+    var latest = intensities[n - 1];
+    
+    // Predict 30 min ahead (about 6 frames forward at 5-min intervals)
+    var predicted30 = Math.max(0, latest + slope * 6);
+    // Predict 60 min ahead
+    var predicted60 = Math.max(0, latest + slope * 12);
+    
+    var trend = 'stable';
+    if(slope > 1) trend = 'increasing';
+    else if(slope > 0.3) trend = 'slight_increase';
+    else if(slope < -1) trend = 'decreasing';
+    else if(slope < -0.3) trend = 'slight_decrease';
+    
+    // Only include if there's meaningful rain now or predicted
+    if(latest > 2 || predicted30 > 10 || predicted60 > 15) {
+      forecastResults.push({
+        name: s.n,
+        risk: s.r,
+        current: latest,
+        predicted30: predicted30,
+        predicted60: predicted60,
+        trend: trend,
+        slope: slope,
+        history: intensities
+      });
+    }
+  });
+  
+  // Sort by predicted danger
+  forecastResults.sort(function(a, b) {
+    return Math.max(b.predicted30, b.predicted60) - Math.max(a.predicted30, a.predicted60);
+  });
+  
+  renderForecast();
+  
+  // Send push notification for dangerous predictions
+  forecastResults.forEach(function(f) {
+    if(f.predicted30 >= 25 && f.current < 15) {
+      // Rain approaching settlement — warn!
+      sendNotification('⚠️ גשם חזק מתקרב ל' + f.name, 
+        'צפי: ~' + f.predicted30.toFixed(0) + ' מ"מ/שעה בעוד 30 דקות');
+    }
+  });
+  
+  // Extra notification for user's nearest settlement
+  if(userNearestSettlement) {
+    var myForecast = forecastResults.find(function(f) { return f.name === userNearestSettlement; });
+    if(myForecast && myForecast.predicted30 >= 15 && myForecast.current < 10) {
+      sendNotification('🌧️ גשם מתקרב אליך!', 
+        userNearestSettlement + ' — צפי: ' + myForecast.predicted30.toFixed(0) + ' מ"מ/שעה');
+    }
+  }
+}
+
+function renderForecast() {
+  var statusEl = document.getElementById('forecastStatus');
+  var cardsEl = document.getElementById('forecastCards');
+  
+  var trendHe = {
+    'increasing': '📈 מתחזק',
+    'slight_increase': '↗️ עולה',
+    'stable': '➡️ יציב',
+    'slight_decrease': '↘️ יורד',
+    'decreasing': '📉 נחלש'
+  };
+  var trendColor = {
+    'increasing': '#dc2626',
+    'slight_increase': '#f59e0b',
+    'stable': '#6b7280',
+    'slight_decrease': '#22c55e',
+    'decreasing': '#22c55e'
+  };
+  
+  statusEl.innerHTML = '✅ תחזית מבוססת ' + frameHistory.length + ' פריימים | ' + 
+    forecastResults.length + ' יישובים עם גשם';
+  
+  if(forecastResults.length === 0) {
+    cardsEl.innerHTML = '<p class="hint">✅ לא צפוי גשם משמעותי בשעה הקרובה</p>';
+    return;
+  }
+  
+  var html = '';
+  forecastResults.forEach(function(f) {
+    var dangerClass = '';
+    if(f.predicted30 >= 40) dangerClass = 'lv-e';
+    else if(f.predicted30 >= 25) dangerClass = 'lv-h';
+    else if(f.predicted30 >= 15) dangerClass = 'lv-m';
+    
+    html += '<div class="card ' + dangerClass + '" onclick="flyTo(\'' + f.name + '\')">';
+    html += '<div class="card-top"><span class="card-name">' + f.name + '</span>';
+    html += '<span style="font-size:11px;color:' + trendColor[f.trend] + '">' + trendHe[f.trend] + '</span></div>';
+    html += '<div class="card-info">';
+    html += '<span>עכשיו: ' + f.current.toFixed(1) + '</span>';
+    html += '<span>30 דק\': <b>' + f.predicted30.toFixed(0) + '</b></span>';
+    html += '<span>60 דק\': <b>' + f.predicted60.toFixed(0) + '</b></span>';
+    html += '</div>';
+    
+    // Mini sparkline using unicode blocks
+    var maxH = Math.max.apply(null, f.history.concat([1]));
+    var bars = f.history.map(function(v) {
+      var h = Math.round((v / maxH) * 7);
+      return ['▁','▂','▃','▄','▅','▆','▇','█'][Math.min(h, 7)];
+    }).join('');
+    html += '<div style="font-size:10px;color:var(--tx2);margin-top:2px;font-family:monospace">' + bars + ' מ"מ/שעה</div>';
+    html += '</div>';
+  });
+  
+  cardsEl.innerHTML = html;
+}
+
+// ============================================================
+// FEATURE 3: PUSH NOTIFICATIONS
+// ============================================================
+
+// Register Service Worker
+if('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').then(function(reg) {
+    console.log('🔔 [SW] Service Worker רשום:', reg.scope);
+  }).catch(function(err) {
+    console.warn('🔔 [SW] שגיאה ברישום:', err);
+  });
+}
+
+// Show notification permission banner if not yet granted
+function checkNotifBanner() {
+  if('Notification' in window && Notification.permission === 'default') {
+    document.getElementById('notifBanner').style.display = 'block';
+  }
+}
+setTimeout(checkNotifBanner, 3000);
+
+function requestNotifPermission() {
+  if(!('Notification' in window)) {
+    alert('הדפדפן לא תומך בהתראות');
+    return;
+  }
+  Notification.requestPermission().then(function(perm) {
+    console.log('🔔 [Notifications] Permission:', perm);
+    document.getElementById('notifBanner').style.display = 'none';
+    if(perm === 'granted') {
+      setStatus('🔔 התראות הופעלו');
+      // Test notification
+      sendNotification('FloodGuard IL', 'התראות הופעלו בהצלחה ✅');
+    }
+  });
+}
+
+function sendNotification(title, body) {
+  if(!('Notification' in window) || Notification.permission !== 'granted') return;
+  
+  try {
+    // Use service worker notification if available (works when app is closed)
+    if(navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.ready.then(function(reg) {
+        reg.showNotification(title, {
+          body: body,
+          icon: '🌧️',
+          badge: '⚠️',
+          tag: 'floodguard-alert',
+          renotify: true,
+          vibrate: [200, 100, 200]
+        });
+      });
+    } else {
+      // Fallback to regular notification
+      new Notification(title, { body: body, tag: 'floodguard-alert' });
+    }
+  } catch(e) {
+    console.warn('🔔 Notification error:', e);
+  }
+}
+
+// ============================================================
+// HOOK: Store frames after analysis & send notifications
+// ============================================================
+var _origAnalyze = analyze;
+analyze = function() {
+  _origAnalyze();
+  // After analysis completes (inside setTimeout), store frame
+  setTimeout(function() {
+    if(radarImageData) {
+      storeFrame();
+      
+      // Send push notifications for extreme alerts
+      var extremeAlerts = [];
+      for(var name in alerts) {
+        if(alerts[name].lv === 'extreme' || alerts[name].lv === 'heavy') {
+          extremeAlerts.push(name + ' (' + alerts[name].mm + ' מ"מ/שעה)');
+        }
+      }
+      if(extremeAlerts.length > 0) {
+        sendNotification('⚠️ התראת הצפה — ' + extremeAlerts.length + ' יישובים', 
+          extremeAlerts.slice(0, 3).join(', '));
+      }
+      
+      // If user located, check their area specifically
+      if(userNearestSettlement && alerts[userNearestSettlement]) {
+        var a = alerts[userNearestSettlement];
+        sendNotification('🚨 גשם כבד ליד המיקום שלך!', 
+          userNearestSettlement + ': ' + a.he + ' — ' + a.mm + ' מ"מ/שעה');
+      }
+    }
+  }, 800);
+};
+
+
+
+
+
+

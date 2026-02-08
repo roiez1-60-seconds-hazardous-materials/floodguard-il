@@ -928,7 +928,13 @@ function analyze() {
     document.getElementById('alertCards').innerHTML = html || '<p class="hint">✅ לא זוהו התראות — אין גשם משמעותי כרגע</p>';
 
     renderList(document.getElementById('search')?.value || '');
-    if(cE > 0) playSound();
+    if(cE > 0) playSound('extreme');
+    else if(cH > 0) playSound('heavy');
+    else if(cM > 0) playSound('moderate');
+
+    // Record to history and update dashboard
+    recordAnalysis(cM, cH, cE);
+    showDashboard();
 
     btn.textContent = '⚡ נתח';
     btn.disabled = false;
@@ -1107,18 +1113,68 @@ function setStatus(msg) {
   document.getElementById('statusMsg').textContent = msg;
 }
 
-function playSound() {
+// ============================================================
+// FEATURE 4: ENHANCED ALERT SOUND SYSTEM
+// Different tones per severity: moderate=gentle, heavy=urgent, extreme=alarm
+// ============================================================
+var soundEnabled = true;
+var lastSoundTime = 0;
+
+function playSound(level) {
+  if(!soundEnabled) return;
+  var now = Date.now();
+  if(now - lastSoundTime < 3000) return; // debounce 3s
+  lastSoundTime = now;
+  
+  level = level || 'moderate';
   try {
     var c = new (window.AudioContext||window.webkitAudioContext)();
-    var o = c.createOscillator(), g = c.createGain();
-    o.connect(g); g.connect(c.destination);
-    o.frequency.setValueAtTime(880,c.currentTime);
-    o.frequency.setValueAtTime(660,c.currentTime+.2);
-    o.frequency.setValueAtTime(880,c.currentTime+.4);
-    g.gain.setValueAtTime(.3,c.currentTime);
-    g.gain.exponentialRampToValueAtTime(.01,c.currentTime+.6);
-    o.start(c.currentTime); o.stop(c.currentTime+.6);
+    
+    if(level === 'extreme') {
+      // ALARM: triple rising tone, loud
+      playTone(c, 0, 660, 0.35, 0.15);
+      playTone(c, 0.18, 880, 0.35, 0.15);
+      playTone(c, 0.36, 1100, 0.4, 0.2);
+      playTone(c, 0.6, 660, 0.35, 0.15);
+      playTone(c, 0.78, 880, 0.35, 0.15);
+      playTone(c, 0.96, 1100, 0.4, 0.25);
+    } else if(level === 'heavy') {
+      // WARNING: two-tone siren
+      playTone(c, 0, 800, 0.3, 0.2);
+      playTone(c, 0.25, 600, 0.3, 0.2);
+      playTone(c, 0.5, 800, 0.3, 0.2);
+    } else {
+      // NOTICE: gentle single ping
+      playTone(c, 0, 523, 0.2, 0.3);
+      playTone(c, 0.15, 659, 0.15, 0.2);
+    }
   } catch(e){}
+}
+
+function playTone(ctx, delay, freq, vol, dur) {
+  var o = ctx.createOscillator();
+  var g = ctx.createGain();
+  o.connect(g); g.connect(ctx.destination);
+  o.frequency.setValueAtTime(freq, ctx.currentTime + delay);
+  o.type = 'sine';
+  g.gain.setValueAtTime(vol, ctx.currentTime + delay);
+  g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + dur);
+  o.start(ctx.currentTime + delay);
+  o.stop(ctx.currentTime + delay + dur + 0.05);
+}
+
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  var btn = document.getElementById('btnSound');
+  if(btn) {
+    btn.textContent = soundEnabled ? '🔔' : '🔕';
+    btn.title = soundEnabled ? 'השתק התראות' : 'הפעל צלילים';
+  }
+  setStatus(soundEnabled ? '🔔 צלילים מופעלים' : '🔕 צלילים מושתקים');
+}
+
+function testSound() {
+  playSound('extreme');
 }
 
 setInterval(function(){
@@ -1410,54 +1466,6 @@ function renderForecast() {
     html += '<span style="font-size:11px;color:' + trendColor[f.trend] + '">' + trendHe[f.trend] + '</span></div>';
     html += '<div class="card-info">';
     html += '<span>עכשיו: ' + f.current.toFixed(1) + '</span>';
-    html += '<span>30 דק\': <b>' + f.predicted30.toFixed(0) + '</b></span>';
-    html += '<span>60 דק\': <b>' + f.predicted60.toFixed(0) + '</b></span>';
-    html += '</div>';
-    
-    // Mini sparkline using unicode blocks
-    var maxH = Math.max.apply(null, f.history.concat([1]));
-    var bars = f.history.map(function(v) {
-      var h = Math.round((v / maxH) * 7);
-      return ['▁','▂','▃','▄','▅','▆','▇','█'][Math.min(h, 7)];
-    }).join('');
-    html += '<div style="font-size:10px;color:var(--tx2);margin-top:2px;font-family:monospace">' + bars + ' מ"מ/שעה</div>';
-    html += '</div>';
-  });
-  
-  cardsEl.innerHTML = html;
-}
-
-// ============================================================
-// FEATURE 3: PUSH NOTIFICATIONS
-// ============================================================
-
-// Register Service Worker
-if('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').then(function(reg) {
-    console.log('🔔 [SW] Service Worker רשום:', reg.scope);
-  }).catch(function(err) {
-    console.warn('🔔 [SW] שגיאה ברישום:', err);
-  });
-}
-
-// Show notification permission banner if not yet granted
-function checkNotifBanner() {
-  if('Notification' in window && Notification.permission === 'default') {
-    document.getElementById('notifBanner').style.display = 'block';
-  }
-}
-setTimeout(checkNotifBanner, 3000);
-
-function requestNotifPermission() {
-  if(!('Notification' in window)) {
-    alert('הדפדפן לא תומך בהתראות');
-    return;
-  }
-  Notification.requestPermission().then(function(perm) {
-    console.log('🔔 [Notifications] Permission:', perm);
-    document.getElementById('notifBanner').style.display = 'none';
-    if(perm === 'granted') {
-      setStatus('🔔 התראות הופעלו');
 
 
 

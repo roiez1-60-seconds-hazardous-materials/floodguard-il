@@ -1,0 +1,6 @@
+{
+  "name": "floodguard-il",
+  "version": "1.0.0",
+  "description": "Israeli Urban Flood Alert System based on Rain Radar",
+  "private": true
+}

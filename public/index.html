@@ -15,7 +15,7 @@
 
 <header id="header">
   <div class="brand">🌧️ <strong>Flood<span>Guard</span> IL</strong></div>
-  <div class="status"><div class="pulse-dot"></div><span id="statusMsg">מערכת פעילה</span><span id="clock"></span><button onclick="toggleDarkMode()" id="btnDark" style="background:none;border:none;font-size:16px;cursor:pointer;margin-right:6px" title="מצב לילה/יום">🌙</button></div>
+  <div class="status"><div class="pulse-dot"></div><span id="statusMsg">מערכת פעילה</span><span id="clock"></span><button onclick="toggleSound()" id="btnSound" style="background:none;border:none;font-size:16px;cursor:pointer;margin-right:4px" title="השתק/הפעל צלילים">🔔</button><button onclick="toggleDarkMode()" id="btnDark" style="background:none;border:none;font-size:16px;cursor:pointer;margin-right:6px" title="מצב לילה/יום">🌙</button></div>
 </header>
 
 <div id="app">
@@ -30,6 +30,13 @@
       <button onclick="locateMe()" id="btnLocate" title="מצא את המיקום שלי">📍</button>
       <button onclick="refreshRadar()" id="btnRefresh" style="display:none">🔃 רענן</button>
     </div>
+    <!-- Map layer controls -->
+    <div id="layerBtns">
+      <button onclick="toggleLayer('wadis')" id="btn_wadis" title="נחלים מועדים להצפות">🌊</button>
+      <button onclick="toggleLayer('floods')" id="btn_floods" title="אזורי הצפה">⚠️</button>
+      <button onclick="toggleLayer('topo')" id="btn_topo" title="טופוגרפיה">🏔️</button>
+      <button onclick="toggleLayer('satellite')" id="btn_satellite" title="לוויין">🛰️</button>
+    </div>
     <div id="legend">
       <b>מקרא</b>
       <div><span class="dot" style="background:#9ca3af"></span> תקין</div>
@@ -37,7 +44,7 @@
       <div><span class="dot" style="background:#ef4444"></span> 25-40 מ"מ/שעה</div>
       <div><span class="dot" style="background:#dc2626;box-shadow:0 0 6px #dc2626"></span> 40+ מ"מ/שעה</div>
     </div>
-    <div id="radarTime" style="display:none;position:absolute;top:10px;right:10px;z-index:500;background:var(--card);border:1px solid var(--brd);border-radius:8px;padding:6px 10px;font-size:11px;color:var(--tx2);">
+    <div id="radarTime" style="display:none;position:absolute;top:50px;right:10px;z-index:500;background:var(--card);border:1px solid var(--brd);border-radius:8px;padding:6px 10px;font-size:11px;color:var(--tx2);">
       🕐 מכ"מ: <span id="radarTimeVal">--</span>
     </div>
     <div id="forecastInfo" style="display:none;position:absolute;bottom:40px;left:10px;z-index:500;background:var(--card);border:1px solid var(--brd);border-radius:8px;padding:8px 12px;font-size:11px;color:var(--tx2);max-width:260px;">
@@ -58,6 +65,7 @@
     <div id="tabs">
       <button class="tab on" onclick="showTab('alerts',this)">🔔 התראות</button>
       <button class="tab" onclick="showTab('list',this)">🏘️ יישובים</button>
+      <button class="tab" onclick="showTab('dashboard',this)">📊 לוח</button>
       <button class="tab" onclick="showTab('forecast',this)">🔮 תחזית</button>
       <button class="tab" onclick="showTab('upload',this)">📤 העלאה</button>
     </div>
@@ -79,6 +87,11 @@
       <div id="p-list" class="pane">
         <input type="text" id="search" placeholder="🔍 חפש יישוב..." oninput="filterList()">
         <div id="settCards"></div>
+      </div>
+      <div id="p-dashboard" class="pane">
+        <div id="dashPanel">
+          <p class="hint">📊 לוח הבקרה יתמלא אחרי ניתוח ראשון<br>לחץ "⚡ נתח" להתחלה</p>
+        </div>
       </div>
       <div id="p-forecast" class="pane">
         <div style="padding:4px 0">

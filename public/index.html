@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FloodGuard IL — מערכת התרעה להצפות</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2563eb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="style.css"/>
 </head>
@@ -23,18 +27,21 @@
       <button onclick="toggleSrc('rainviewer')" id="btnWindy">🌧️ RainViewer</button>
       <button onclick="analyze()" id="btnRun">⚡ נתח</button>
       <button onclick="toggleAuto()" id="btnAuto">🔄 אוטומטי</button>
+      <button onclick="locateMe()" id="btnLocate" title="מצא את המיקום שלי">📍</button>
       <button onclick="refreshRadar()" id="btnRefresh" style="display:none">🔃 רענן</button>
     </div>
     <div id="legend">
       <b>מקרא</b>
-      <div><span class="dot" style="background:#22c55e"></span> תקין</div>
+      <div><span class="dot" style="background:#9ca3af"></span> תקין</div>
       <div><span class="dot" style="background:#f59e0b"></span> 15-25 מ"מ/שעה</div>
       <div><span class="dot" style="background:#ef4444"></span> 25-40 מ"מ/שעה</div>
-      <div><span class="dot" style="background:#dc2626"></span> 40+ מ"מ/שעה</div>
+      <div><span class="dot" style="background:#dc2626;box-shadow:0 0 6px #dc2626"></span> 40+ מ"מ/שעה</div>
     </div>
-    <!-- Radar timestamp display -->
     <div id="radarTime" style="display:none;position:absolute;top:10px;right:10px;z-index:500;background:var(--card);border:1px solid var(--brd);border-radius:8px;padding:6px 10px;font-size:11px;color:var(--tx2);">
       🕐 מכ"מ: <span id="radarTimeVal">--</span>
+    </div>
+    <div id="forecastInfo" style="display:none;position:absolute;bottom:40px;left:10px;z-index:500;background:var(--card);border:1px solid var(--brd);border-radius:8px;padding:8px 12px;font-size:11px;color:var(--tx2);max-width:260px;">
+      <span id="forecastText"></span>
     </div>
   </div>
 
@@ -42,6 +49,7 @@
     <div id="tabs">
       <button class="tab on" onclick="showTab('alerts',this)">🔔 התראות</button>
       <button class="tab" onclick="showTab('list',this)">🏘️ יישובים</button>
+      <button class="tab" onclick="showTab('forecast',this)">🔮 תחזית</button>
       <button class="tab" onclick="showTab('upload',this)">📤 העלאה</button>
     </div>
     <div id="panel">
@@ -51,6 +59,10 @@
           <div class="cnt cd"><div id="cntH" class="cnt-n">0</div><div class="cnt-l">חזק</div></div>
           <div class="cnt ce"><div id="cntE" class="cnt-n">0</div><div class="cnt-l">כבד מאוד</div></div>
         </div>
+        <div id="notifBanner" style="display:none;background:rgba(37,99,235,.08);border:1px solid rgba(37,99,235,.2);border-radius:8px;padding:10px;margin-bottom:8px;font-size:12px;">
+          🔔 רוצה לקבל התראות גם כשהאפליקציה סגורה?
+          <button onclick="requestNotifPermission()" style="display:block;margin-top:6px;width:100%;padding:8px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer">אשר התראות</button>
+        </div>
         <div id="alertCards">
           <p class="hint">לחץ "⚡ נתח" להפעלת ניתוח מכ"מ</p>
         </div>
@@ -59,13 +71,25 @@
         <input type="text" id="search" placeholder="🔍 חפש יישוב..." oninput="filterList()">
         <div id="settCards"></div>
       </div>
+      <div id="p-forecast" class="pane">
+        <div style="padding:4px 0">
+          <b>🔮 תחזית תנועת גשם</b>
+          <p style="font-size:11px;color:var(--tx2);margin:4px 0">מבוסס על ניתוח כיוון ומהירות תנועת הגשם</p>
+        </div>
+        <div id="forecastStatus" style="font-size:12px;padding:8px;background:rgba(0,0,0,.03);border-radius:6px;margin-bottom:8px;">
+          ⏳ לחץ RainViewer ואז "🔄 אוטומטי" — המערכת צוברת פריימים ומייצרת תחזית
+        </div>
+        <div id="forecastCards"></div>
+      </div>
       <div id="p-upload" class="pane">
         <p class="hint">העלה תמונת מכ"מ גשם לניתוח ידני</p>
-        <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <p style="font-size:11px;color:var(--tx2);margin:0 0 8px">בחר מקור וסקלת צבעים:</p>
+        <div style="display:flex;gap:6px;margin-bottom:4px;">
           <button onclick="setUploadSrc('ims')" class="srcBtn on" id="srcIms">שמ"ט</button>
           <button onclick="setUploadSrc('govmap')" class="srcBtn" id="srcGov">GovMap</button>
           <button onclick="setUploadSrc('rainviewer')" class="srcBtn" id="srcRv">RainViewer</button>
         </div>
+        <div id="srcUnits" style="font-size:10px;color:var(--tx2);margin-bottom:8px;padding:4px 6px;background:rgba(0,0,0,.03);border-radius:4px;">📏 שמ"ט: מ"מ/שעה (mm/hr) — ללא המרה</div>
         <div id="dropZone" onclick="document.getElementById('fileIn').click()">
           📤 לחץ להעלאת תמונה
         </div>
@@ -81,3 +105,10 @@
 <script src="app.js"></script>
 </body>
 </html>
+
+
+
+
+
+
+

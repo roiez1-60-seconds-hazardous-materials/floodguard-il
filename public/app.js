@@ -11,6 +11,8 @@ var IMS_RADAR_BASE = 'https://ims.gov.il/sites/default/files/ims_data/map_images
 
 // IMS radar image geo-bounds (approximate for Israel)
 var IMS_BOUNDS = [[29.0, 33.5], [34.0, 36.5]];
+var IMS_BOUNDS_ORIG = [[29.0, 33.5], [34.0, 36.5]]; // never changes
+var analysisBounds = [[29.0, 33.5], [34.0, 36.5]]; // active bounds for pixel analysis
 
 // === SETTLEMENTS DATA ===
 var S = [
@@ -270,40 +272,71 @@ function loadRainViewer() {
 }
 
 function fetchRainViewerForAnalysis(host, path) {
-  // Fetch BW tiles covering Israel (zoom 5 covers well)
-  // Israel at z=5: x=18-19, y=12-13
+  // Fetch COLOR tiles (scheme 2 = Universal Blue) via proxy for analysis
+  // Same scheme displayed on map — we have the color table for it
   var z = 5;
   var tiles = [{x:19,y:12},{x:19,y:13},{x:18,y:12},{x:18,y:13}];
   var canvas = document.createElement('canvas');
   canvas.width = 512; canvas.height = 512;
   var ctx = canvas.getContext('2d');
   var loaded = 0;
+  var succeeded = 0;
   
   tiles.forEach(function(t, idx) {
-    var url = host + path + '/256/' + z + '/' + t.x + '/' + t.y + '/0/0_0.png';
+    // Color scheme 2, options 1_1 (same as display layer)
+    var tileUrl = host + path + '/256/' + z + '/' + t.x + '/' + t.y + '/2/1_1.png';
+    // Load via proxy to ensure CORS for canvas pixel reading
+    var proxyUrl = PROXY_BASE + '?url=' + encodeURIComponent(tileUrl);
+    
     var img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = function() {
-      var dx = (idx % 2) * 256;
-      var dy = Math.floor(idx / 2) * 256;
-      ctx.drawImage(img, dx, dy);
-      loaded++;
-      if(loaded === tiles.length) {
-        radarImageData = ctx.getImageData(0, 0, 512, 512);
-        debugColorTable(radarImageData, 'RainViewer BW');
-        // Update bounds to match these tiles
-        // z=5 tiles: calculate lat/lon bounds
-        // Tile 18,12 to 19,13 at z=5
-        // Using standard slippy map math
-        IMS_BOUNDS[0][0] = tileLat(14, z); // south
-        IMS_BOUNDS[1][0] = tileLat(12, z); // north  
-        IMS_BOUNDS[0][1] = tileLon(18, z); // west
-        IMS_BOUNDS[1][1] = tileLon(20, z); // east
-      }
+      ctx.drawImage(img, (idx % 2) * 256, Math.floor(idx / 2) * 256);
+      loaded++; succeeded++;
+      if(loaded === tiles.length) finishRVLoad();
     };
-    img.onerror = function() { loaded++; };
-    img.src = '/api/proxy?url=' + encodeURIComponent(url);
+    img.onerror = function() {
+      // Fallback: try direct
+      var img2 = new Image();
+      img2.crossOrigin = 'anonymous';
+      img2.onload = function() {
+        ctx.drawImage(img2, (idx % 2) * 256, Math.floor(idx / 2) * 256);
+        loaded++; succeeded++;
+        if(loaded === tiles.length) finishRVLoad();
+      };
+      img2.onerror = function() {
+        loaded++;
+        console.warn('RainViewer tile failed:', tileUrl);
+        if(loaded === tiles.length) finishRVLoad();
+      };
+      img2.src = tileUrl;
+    };
+    img.src = proxyUrl;
   });
+  
+  function finishRVLoad() {
+    if(succeeded > 0) {
+      try {
+        radarImageData = ctx.getImageData(0, 0, 512, 512);
+        radarSource = 'rainviewer'; // color scheme analysis
+        debugColorTable(radarImageData, 'RainViewer Color');
+        analysisBounds[0][0] = tileLat(14, z);
+        analysisBounds[1][0] = tileLat(12, z);
+        analysisBounds[0][1] = tileLon(18, z);
+        analysisBounds[1][1] = tileLon(20, z);
+        console.log('✅ RainViewer tiles loaded: ' + succeeded + '/4, source=' + radarSource);
+        setStatus('🌧️ RainViewer מוכן לניתוח (' + succeeded + '/4 tiles)');
+      } catch(e) {
+        console.error('Canvas getImageData failed (CORS?):', e);
+        setStatus('⚠️ RainViewer: ניתוח נחסם (CORS) — נסה רענון');
+        radarImageData = null;
+      }
+    } else {
+      console.error('❌ All RainViewer tiles failed to load');
+      setStatus('⚠️ RainViewer: לא הצלחתי לטעון tiles לניתוח');
+      radarImageData = null;
+    }
+  }
 }
 
 // Slippy map tile → lat/lon conversion
@@ -346,8 +379,12 @@ function toggleSrc(src) {
     (src==='ims'?bI:bW).classList.add('on');
     activeSrc = src;
     
-    if(src==='ims') { radarSource = 'ims'; loadIMSRadar(); }
-    if(src==='rainviewer') { radarSource = 'rainviewer_bw'; loadRainViewer(); }
+    if(src==='ims') {
+      radarSource = 'ims';
+      analysisBounds = [[29.0,33.5],[34.0,36.5]];
+      loadIMSRadar();
+    }
+    if(src==='rainviewer') { radarSource = 'rainviewer'; loadRainViewer(); }
   }
 }
 
@@ -591,8 +628,8 @@ function dbzToMmHr(dbz) {
 }
 
 function latLonToPixel(lat, lon, imgW, imgH) {
-  var latMin = IMS_BOUNDS[0][0], latMax = IMS_BOUNDS[1][0];
-  var lonMin = IMS_BOUNDS[0][1], lonMax = IMS_BOUNDS[1][1];
+  var latMin = analysisBounds[0][0], latMax = analysisBounds[1][0];
+  var lonMin = analysisBounds[0][1], lonMax = analysisBounds[1][1];
   var x = Math.round((lon - lonMin) / (lonMax - lonMin) * imgW);
   var y = Math.round((latMax - lat) / (latMax - latMin) * imgH);
   return {x: Math.max(0, Math.min(imgW-1, x)), y: Math.max(0, Math.min(imgH-1, y))};
@@ -673,46 +710,31 @@ function computeAlertScore(radarStats, riskScore) {
 }
 
 function analyze() {
-  if(!activeSrc && !radarImageData) { alert('בחר מקור מכ"מ קודם (שמ"ט או Windy) או העלה תמונה'); return; }
+  if(!radarImageData) { 
+    alert('אין נתוני מכ"מ. לחץ על שמ"ט או RainViewer קודם, או העלה תמונה.'); 
+    return; 
+  }
 
   var btn = document.getElementById('btnRun');
   btn.textContent = '⏳ מנתח...';
   btn.disabled = true;
 
-  var useRealData = radarImageData != null;
-
   setTimeout(function() {
     for(var k in alerts) delete alerts[k];
     var cM=0, cH=0, cE=0;
-    var analysisDetails = {};
 
     S.forEach(function(s) {
-      var mmhr = 0;
-      var detail = null;
-
-      if(useRealData) {
-        // REAL analysis with enhanced engine
-        var stats = sampleRadarAtLocation(radarImageData, s.la, s.lo, 6);
-        var score = computeAlertScore(stats, s.r);
-        mmhr = score.effective;
-        detail = {
-          avgMm: stats.avgMmHr.toFixed(1),
-          maxMm: stats.maxMmHr.toFixed(1),
-          p90Mm: stats.p90MmHr.toFixed(1),
-          cover: (stats.coverage * 100).toFixed(0),
-          effMm: score.effective.toFixed(1),
-          rawMm: score.mmhr.toFixed(1)
-        };
-      } else {
-        // Simulated (Windy iframe)
-        var rand = Math.random();
-        var thresh = s.r / 100;
-        if(rand < thresh * 0.3) {
-          if(s.r>=80 && rand<0.1) mmhr = 40 + Math.random()*30;
-          else if(s.r>=65 && rand<0.2) mmhr = 25 + Math.random()*15;
-          else mmhr = 15 + Math.random()*10;
-        }
-      }
+      var stats = sampleRadarAtLocation(radarImageData, s.la, s.lo, 6);
+      var score = computeAlertScore(stats, s.r);
+      var mmhr = score.effective;
+      var detail = {
+        avgMm: stats.avgMmHr.toFixed(1),
+        maxMm: stats.maxMmHr.toFixed(1),
+        p90Mm: stats.p90MmHr.toFixed(1),
+        cover: (stats.coverage * 100).toFixed(0),
+        effMm: score.effective.toFixed(1),
+        rawMm: score.mmhr.toFixed(1)
+      };
 
       // Classify by effective mm/hr
       if(mmhr >= 40) {
@@ -765,8 +787,8 @@ function analyze() {
       html += '</div>';
     });
 
-    var modeText = useRealData ? '(ניתוח אמיתי מתמונת מכ"מ)' : '(סימולציה — Windy)';
-    document.getElementById('alertCards').innerHTML = html || '<p class="hint">✅ לא זוהו התראות ' + modeText + '</p>';
+    var modeText = '(ניתוח מכ"מ אמיתי)';
+    document.getElementById('alertCards').innerHTML = html || '<p class="hint">✅ לא זוהו התראות — אין גשם משמעותי כרגע</p>';
 
     renderList(document.getElementById('search')?.value || '');
     if(cE > 0) playSound();
@@ -775,9 +797,10 @@ function analyze() {
     btn.disabled = false;
 
     var t = new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
-    setStatus('ניתוח הושלם '+t+' | '+(cM+cH+cE)+' התראות ' + modeText);
+    var srcName = radarSource === 'rainviewer_bw' ? 'RainViewer' : radarSource === 'ims' ? 'שמ"ט' : 'העלאה';
+    setStatus('ניתוח הושלם '+t+' | '+(cM+cH+cE)+' התראות ('+srcName+')');
     showTab('alerts', document.querySelector('.tab'));
-  }, useRealData ? 500 : 1200);
+  }, 500);
 }
 
 var uploadSrcChoice = 'ims'; // default for manual uploads
@@ -913,11 +936,21 @@ function autoFetchAndAnalyze() {
   }
   
   // Wait for data to load, then analyze
+  // Try at 6s, if no data try again at 12s
   setTimeout(function() {
     if(radarImageData) {
       analyze();
+    } else {
+      // Give it more time
+      setTimeout(function() {
+        if(radarImageData) {
+          analyze();
+        } else {
+          setStatus('⚠️ לא הצלחתי לשלוף מכ"מ — מנסה שוב בעוד ' + AUTO_REFRESH_MIN + ' דקות');
+        }
+      }, 6000);
     }
-  }, 4000); // give 4 seconds for tiles to load
+  }, 6000);
 }
 
 // === INIT ===

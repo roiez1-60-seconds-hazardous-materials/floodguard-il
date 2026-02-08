@@ -15,7 +15,7 @@
 
 <header id="header">
   <div class="brand">🌧️ <strong>Flood<span>Guard</span> IL</strong></div>
-  <div class="status"><div class="pulse-dot"></div><span id="statusMsg">מערכת פעילה</span><span id="clock"></span></div>
+  <div class="status"><div class="pulse-dot"></div><span id="statusMsg">מערכת פעילה</span><span id="clock"></span><button onclick="toggleDarkMode()" id="btnDark" style="background:none;border:none;font-size:16px;cursor:pointer;margin-right:6px" title="מצב לילה/יום">🌙</button></div>
 </header>
 
 <div id="app">
@@ -42,6 +42,15 @@
     </div>
     <div id="forecastInfo" style="display:none;position:absolute;bottom:40px;left:10px;z-index:500;background:var(--card);border:1px solid var(--brd);border-radius:8px;padding:8px 12px;font-size:11px;color:var(--tx2);max-width:260px;">
       <span id="forecastText"></span>
+    </div>
+    <!-- Radar animation bar -->
+    <div id="animBar">
+      <button onclick="animPrev()" title="הקודם">⏮</button>
+      <button onclick="animToggle()" id="animPlayBtn" title="נגן/עצור">▶️</button>
+      <button onclick="animNext()" title="הבא">⏭</button>
+      <input type="range" id="animSlider" min="0" max="0" value="0" oninput="animSeek(this.value)">
+      <span id="animTime">--:--</span>
+      <button onclick="animClose()" title="סגור">✖</button>
     </div>
   </div>
 

@@ -809,6 +809,12 @@ function analyze() {
         html += '<span>כיסוי: '+a.detail.cover+'%</span>';
         html += '</div>';
       }
+      // Share buttons
+      var safeName = s.n.replace(/'/g, "\\'");
+      html += '<div style="display:flex;gap:6px;margin-top:4px;justify-content:flex-end">';
+      html += '<button class="share-btn" onclick="event.stopPropagation();shareAlert(\''+safeName+'\')" title="שתף">📤</button>';
+      html += '<button class="share-btn" onclick="event.stopPropagation();copyAlert(\''+safeName+'\')" title="העתק">📋</button>';
+      html += '</div>';
       html += '</div>';
     });
 
@@ -1409,6 +1415,68 @@ analyze = function() {
     }
   }, 800);
 };
+
+// ============================================================
+// FEATURE 5: RADAR ANIMATION — supports both RainViewer & IMS
+// ============================================================
+var animFrames = []; // unified: {time (epoch ms), layer (L.tileLayer or L.imageOverlay)}
+var animIdx = 0;
+var animTimer = null;
+var animPlaying = false;
+var animSource = null; // 'rainviewer' or 'ims'
+
+function loadAnimation() {
+  if(activeSrc === 'ims') {
+    loadIMSAnimation();
+  } else {
+    loadRainViewerAnimation();
+  }
+}
+
+// --- RainViewer animation ---
+function loadRainViewerAnimation() {
+  setStatus('🎬 טוען אנימציה (RainViewer)...');
+  fetch('https://api.rainviewer.com/public/weather-maps.json')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if(!data.radar || !data.radar.past) return;
+      var host = data.host || 'https://tilecache.rainviewer.com';
+      var frames = data.radar.past.slice(-12);
+      console.log('🎬 [RV Animation] ' + frames.length + ' פריימים');
+      
+      clearAnimLayers();
+      animSource = 'rainviewer';
+      
+      frames.forEach(function(frame) {
+        var url = host + frame.path + '/256/{z}/{x}/{y}/2/1_1.png';
+        var layer = L.tileLayer(url, {opacity: 0, zIndex: 400, maxZoom: 7}).addTo(map);
+        animFrames.push({time: frame.time * 1000, layer: layer});
+      });
+      
+      initAnimBar();
+    })
+    .catch(function(e) {
+      setStatus('⚠️ שגיאה בטעינת אנימציה: ' + e.message);
+    });
+}
+
+// --- IMS animation: load 12 frames (1 hour back, every 5 min) ---
+function loadIMSAnimation() {
+  setStatus('🎬 טוען אנימציה (שמ"ט)...');
+  clearAnimLayers();
+  animSource = 'ims';
+  
+  var framesToLoad = 12;
+  var loaded = 0;
+  var succeeded = 0;
+  
+  for(var i = framesToLoad - 1; i >= 0; i--) {
+    (function(offset) {
+      var now = new Date();
+      // Start from the most recent known good time and go back
+      now.setMinutes(Math.floor(now.getMinutes()/5)*5 - offset*5, 0, 0);
+      var y = now.getUTCFullYear();
+      var mo = String(now.getUTCMonth()+1).padStart(2,'0');
 
 
 

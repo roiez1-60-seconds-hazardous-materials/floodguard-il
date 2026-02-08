@@ -159,18 +159,25 @@ function getIMSRadarUrl() {
 
 function loadIMSRadar() {
   setStatus('📡 טוען מכ"מ שמ"ט...');
-  
-  var directUrl = getIMSRadarUrl();
-  var proxyUrl = PROXY_BASE + '?url=' + encodeURIComponent(directUrl);
-  
-  // Try multiple timestamps (current, -5min, -10min, -15min)
-  tryLoadImage(proxyUrl, 0);
+  tryLoadIMS(0);
 }
 
-function tryLoadImage(baseProxyUrl, attempt) {
-  if(attempt > 5) {
-    console.warn('📡 [שמ"ט] כל 6 הניסיונות נכשלו (30 דקות אחורה)');
-    setStatus('⚠️ לא נמצאה תמונת מכ"מ עדכנית');
+// IMS radar URL patterns to try (in order of preference)
+var IMS_URL_PATTERNS = [
+  // Pattern 1: IMSRadar4GIS PNG with _0 suffix (GIS-ready, documented by Windy)
+  function(ts) { return 'https://ims.gov.il/sites/default/files/ims_data/map_images/IMSRadar4GIS/IMSRadar4GIS_' + ts + '_0.png'; },
+  // Pattern 2: IMSRadar4GIS PNG without suffix
+  function(ts) { return 'https://ims.gov.il/sites/default/files/ims_data/map_images/IMSRadar4GIS/IMSRadar4GIS_' + ts + '.png'; },
+  // Pattern 3: IMSRadar GIF (older format, may still be active)
+  function(ts) { return 'https://ims.gov.il/sites/default/files/ims_data/map_images/IMSRadar/IMSRadar_' + ts + '.gif'; },
+  // Pattern 4: IMSRadar4GIS with _1 suffix
+  function(ts) { return 'https://ims.gov.il/sites/default/files/ims_data/map_images/IMSRadar4GIS/IMSRadar4GIS_' + ts + '_1.png'; }
+];
+
+function tryLoadIMS(attempt) {
+  if(attempt > 11) {
+    console.warn('📡 [שמ"ט] כל הניסיונות נכשלו (60 דקות אחורה, כל הפורמטים)');
+    setStatus('⚠️ לא נמצאה תמונת מכ"מ שמ"ט — ייתכן שהשירות לא פעיל כרגע');
     return;
   }
   
@@ -182,15 +189,38 @@ function tryLoadImage(baseProxyUrl, attempt) {
   var h = String(now.getUTCHours()).padStart(2,'0');
   var mi = String(now.getUTCMinutes()).padStart(2,'0');
   var ts = y+mo+d+h+mi;
-  var imsUrl = IMS_RADAR_BASE + ts + '_0.png';
-  var proxyUrl = PROXY_BASE + '?url=' + encodeURIComponent(imsUrl);
   
-  console.log('📡 [שמ"ט] ניסיון ' + (attempt+1) + '/6: ' + ts + ' (' + imsUrl + ')');
+  console.log('📡 [שמ"ט] ניסיון ' + (attempt+1) + '/12: timestamp=' + ts);
+  
+  // Try all URL patterns for this timestamp
+  tryIMSPattern(ts, 0, attempt, now);
+}
+
+function tryIMSPattern(ts, patternIdx, attempt, dateObj) {
+  if(patternIdx >= IMS_URL_PATTERNS.length) {
+    // All patterns failed for this timestamp, try older
+    tryLoadIMS(attempt + 1);
+    return;
+  }
+  
+  var imsUrl = IMS_URL_PATTERNS[patternIdx](ts);
+  var proxyUrl = PROXY_BASE + '?url=' + encodeURIComponent(imsUrl);
+  var patternName = ['4GIS_0.png', '4GIS.png', 'Radar.gif', '4GIS_1.png'][patternIdx];
+  
+  console.log('📡 [שמ"ט]   פורמט ' + (patternIdx+1) + '/' + IMS_URL_PATTERNS.length + ' (' + patternName + ')');
   
   var img = new Image();
   img.crossOrigin = 'anonymous';
   img.onload = function() {
-    console.log('📡 [שמ"ט] ✅ נמצאה תמונה! timestamp=' + ts + ', גודל=' + img.width + 'x' + img.height);
+    // Verify it's a real image (not a 404 page returned as 200)
+    if(img.width < 10 || img.height < 10) {
+      console.log('📡 [שמ"ט]   ⚠️ תמונה קטנה מדי (' + img.width + 'x' + img.height + '), ממשיך...');
+      tryIMSPattern(ts, patternIdx + 1, attempt, dateObj);
+      return;
+    }
+    
+    console.log('📡 [שמ"ט] ✅ נמצאה תמונה! ' + patternName + ' timestamp=' + ts + ', גודל=' + img.width + 'x' + img.height);
+    
     // Success! Show on map
     if(imsOverlay) map.removeLayer(imsOverlay);
     imsOverlay = L.imageOverlay(img.src, IMS_BOUNDS, {opacity: 0.6}).addTo(map);
@@ -202,22 +232,24 @@ function tryLoadImage(baseProxyUrl, attempt) {
     ctx.drawImage(img,0,0);
     radarImageData = ctx.getImageData(0,0,cvs.width,cvs.height);
     
+    // Remember which pattern worked for future use
+    window._imsWorkingPattern = patternIdx;
+    
     // Show timestamp
-    var localTime = now.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
+    var localTime = dateObj.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
     var ageMin = attempt * 5;
     document.getElementById('radarTimeVal').textContent = localTime + ' UTC (לפני ~' + ageMin + ' דק\')';
     document.getElementById('radarTime').style.display = 'block';
     document.getElementById('btnRefresh').style.display = 'block';
     
-    setStatus('📡 מכ"מ שמ"ט נטען — ' + localTime + ' UTC');
+    setStatus('📡 מכ"מ שמ"ט נטען — ' + localTime + ' UTC (' + patternName + ')');
     
     // Auto-analyze colors and log to console
     debugColorTable(radarImageData, 'IMS Radar ' + ts);
   };
   img.onerror = function() {
-    console.log('📡 [שמ"ט] ❌ ' + ts + ' לא נמצא, מנסה ישן יותר...');
-    // Try older timestamp
-    tryLoadImage(baseProxyUrl, attempt + 1);
+    // Try next pattern
+    tryIMSPattern(ts, patternIdx + 1, attempt, dateObj);
   };
   img.src = proxyUrl;
 }
@@ -366,6 +398,80 @@ function removeRainViewer() {
   if(rvTileLayer) { map.removeLayer(rvTileLayer); rvTileLayer = null; }
   document.getElementById('radarTime').style.display = 'none';
   document.getElementById('btnRefresh').style.display = 'none';
+}
+
+// Load multiple past frames from RainViewer for instant nowcast
+function loadRVPastFramesForNowcast() {
+  fetch('https://api.rainviewer.com/public/weather-maps.json')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if(!data.radar || !data.radar.past) return;
+      var host = data.host || 'https://tilecache.rainviewer.com';
+      var pastFrames = data.radar.past.slice(-8); // last 8 frames
+      console.log('🔮 [Nowcast Bulk] טוען ' + pastFrames.length + ' פריימים מ-RainViewer...');
+      
+      var z = 5;
+      var tiles = [{x:19,y:12},{x:19,y:13},{x:18,y:12},{x:18,y:13}];
+      var framesLoaded = 0;
+      
+      // Clear old frame history
+      frameHistory = [];
+      
+      pastFrames.forEach(function(frame, fIdx) {
+        var canvas = document.createElement('canvas');
+        canvas.width = 512; canvas.height = 512;
+        var ctx = canvas.getContext('2d');
+        var tileLoaded = 0;
+        var tileOk = 0;
+        
+        tiles.forEach(function(t, tIdx) {
+          var tileUrl = host + frame.path + '/256/' + z + '/' + t.x + '/' + t.y + '/2/1_1.png';
+          var proxyUrl = PROXY_BASE + '?url=' + encodeURIComponent(tileUrl);
+          
+          var img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = function() {
+            ctx.drawImage(img, (tIdx % 2) * 256, Math.floor(tIdx / 2) * 256);
+            tileLoaded++; tileOk++;
+            if(tileLoaded === tiles.length) finishFrame();
+          };
+          img.onerror = function() {
+            tileLoaded++;
+            if(tileLoaded === tiles.length) finishFrame();
+          };
+          img.src = proxyUrl;
+        });
+        
+        function finishFrame() {
+          if(tileOk > 0) {
+            try {
+              var imgData = ctx.getImageData(0, 0, 512, 512);
+              var bnds = [
+                [tileLat(14, z), tileLon(18, z)],
+                [tileLat(12, z), tileLon(20, z)]
+              ];
+              frameHistory.push({
+                timestamp: frame.time * 1000,
+                imageData: imgData,
+                bounds: bnds
+              });
+            } catch(e) {}
+          }
+          framesLoaded++;
+          if(framesLoaded === pastFrames.length) {
+            // Sort by time
+            frameHistory.sort(function(a, b) { return a.timestamp - b.timestamp; });
+            console.log('🔮 [Nowcast Bulk] ✅ ' + frameHistory.length + ' פריימים נטענו');
+            if(frameHistory.length >= 3) {
+              runNowcast();
+            }
+          }
+        }
+      });
+    })
+    .catch(function(e) {
+      console.warn('🔮 [Nowcast Bulk] שגיאה:', e);
+    });
 }
 
 // ============================================================
@@ -1352,131 +1458,6 @@ function requestNotifPermission() {
     document.getElementById('notifBanner').style.display = 'none';
     if(perm === 'granted') {
       setStatus('🔔 התראות הופעלו');
-      // Test notification
-      sendNotification('FloodGuard IL', 'התראות הופעלו בהצלחה ✅');
-    }
-  });
-}
-
-function sendNotification(title, body) {
-  if(!('Notification' in window) || Notification.permission !== 'granted') return;
-  
-  try {
-    // Use service worker notification if available (works when app is closed)
-    if(navigator.serviceWorker && navigator.serviceWorker.controller) {
-      navigator.serviceWorker.ready.then(function(reg) {
-        reg.showNotification(title, {
-          body: body,
-          icon: '🌧️',
-          badge: '⚠️',
-          tag: 'floodguard-alert',
-          renotify: true,
-          vibrate: [200, 100, 200]
-        });
-      });
-    } else {
-      // Fallback to regular notification
-      new Notification(title, { body: body, tag: 'floodguard-alert' });
-    }
-  } catch(e) {
-    console.warn('🔔 Notification error:', e);
-  }
-}
-
-// ============================================================
-// HOOK: Store frames after analysis & send notifications
-// ============================================================
-var _origAnalyze = analyze;
-analyze = function() {
-  _origAnalyze();
-  // After analysis completes (inside setTimeout), store frame
-  setTimeout(function() {
-    if(radarImageData) {
-      storeFrame();
-      
-      // Send push notifications for extreme alerts
-      var extremeAlerts = [];
-      for(var name in alerts) {
-        if(alerts[name].lv === 'extreme' || alerts[name].lv === 'heavy') {
-          extremeAlerts.push(name + ' (' + alerts[name].mm + ' מ"מ/שעה)');
-        }
-      }
-      if(extremeAlerts.length > 0) {
-        sendNotification('⚠️ התראת הצפה — ' + extremeAlerts.length + ' יישובים', 
-          extremeAlerts.slice(0, 3).join(', '));
-      }
-      
-      // If user located, check their area specifically
-      if(userNearestSettlement && alerts[userNearestSettlement]) {
-        var a = alerts[userNearestSettlement];
-        sendNotification('🚨 גשם כבד ליד המיקום שלך!', 
-          userNearestSettlement + ': ' + a.he + ' — ' + a.mm + ' מ"מ/שעה');
-      }
-    }
-  }, 800);
-};
-
-// ============================================================
-// FEATURE 5: RADAR ANIMATION — supports both RainViewer & IMS
-// ============================================================
-var animFrames = []; // unified: {time (epoch ms), layer (L.tileLayer or L.imageOverlay)}
-var animIdx = 0;
-var animTimer = null;
-var animPlaying = false;
-var animSource = null; // 'rainviewer' or 'ims'
-
-function loadAnimation() {
-  if(activeSrc === 'ims') {
-    loadIMSAnimation();
-  } else {
-    loadRainViewerAnimation();
-  }
-}
-
-// --- RainViewer animation ---
-function loadRainViewerAnimation() {
-  setStatus('🎬 טוען אנימציה (RainViewer)...');
-  fetch('https://api.rainviewer.com/public/weather-maps.json')
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if(!data.radar || !data.radar.past) return;
-      var host = data.host || 'https://tilecache.rainviewer.com';
-      var frames = data.radar.past.slice(-12);
-      console.log('🎬 [RV Animation] ' + frames.length + ' פריימים');
-      
-      clearAnimLayers();
-      animSource = 'rainviewer';
-      
-      frames.forEach(function(frame) {
-        var url = host + frame.path + '/256/{z}/{x}/{y}/2/1_1.png';
-        var layer = L.tileLayer(url, {opacity: 0, zIndex: 400, maxZoom: 7}).addTo(map);
-        animFrames.push({time: frame.time * 1000, layer: layer});
-      });
-      
-      initAnimBar();
-    })
-    .catch(function(e) {
-      setStatus('⚠️ שגיאה בטעינת אנימציה: ' + e.message);
-    });
-}
-
-// --- IMS animation: load 12 frames (1 hour back, every 5 min) ---
-function loadIMSAnimation() {
-  setStatus('🎬 טוען אנימציה (שמ"ט)...');
-  clearAnimLayers();
-  animSource = 'ims';
-  
-  var framesToLoad = 12;
-  var loaded = 0;
-  var succeeded = 0;
-  
-  for(var i = framesToLoad - 1; i >= 0; i--) {
-    (function(offset) {
-      var now = new Date();
-      // Start from the most recent known good time and go back
-      now.setMinutes(Math.floor(now.getMinutes()/5)*5 - offset*5, 0, 0);
-      var y = now.getUTCFullYear();
-      var mo = String(now.getUTCMonth()+1).padStart(2,'0');
 
 
 

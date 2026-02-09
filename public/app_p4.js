@@ -504,6 +504,10 @@ function toggleLayer(layerName) {
     }
     delete activeOverlays[layerName];
     if(btn) btn.classList.remove('on');
+    // Restore base map if we removed topo or satellite
+    if(layerName === 'topo' || layerName === 'satellite') {
+      restoreBaseMap();
+    }
   } else {
     // Add
     var layer = null;
@@ -546,17 +550,16 @@ function toggleLayer(layerName) {
 }
 
 function restoreBaseMap() {
-  ['satellite','topo'].forEach(function(k) {
-    if(activeOverlays[k]) {
-      map.removeLayer(activeOverlays[k]);
-      delete activeOverlays[k];
-      var btn = document.getElementById('btn_'+k);
-      if(btn) btn.classList.remove('on');
-    }
+  // Check if Google Maps base is already there
+  var hasBase = false;
+  map.eachLayer(function(l) {
+    if(l._url && l._url.includes('google.com/vt/lyrs=m')) hasBase = true;
   });
-  L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=he', {
-    attribution:'© Google Maps', maxZoom:20, subdomains:'0123'
-  }).addTo(map);
+  if(!hasBase) {
+    L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=he', {
+      attribution:'© Google Maps', maxZoom:20, subdomains:'0123'
+    }).addTo(map);
+  }
 }
 
 // Init layers

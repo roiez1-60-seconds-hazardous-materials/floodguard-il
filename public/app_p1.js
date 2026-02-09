@@ -9,10 +9,10 @@ var RAINVIEWER_API = 'https://api.rainviewer.com/public/weather-maps.json';
 // IMS Radar image base URL
 var IMS_RADAR_BASE = 'https://ims.gov.il/sites/default/files/ims_data/map_images/IMSRadar4GIS/IMSRadar4GIS_';
 
-// IMS radar image geo-bounds (approximate for Israel)
-var IMS_BOUNDS = [[29.0, 33.5], [34.0, 36.5]];
-var IMS_BOUNDS_ORIG = [[29.0, 33.5], [34.0, 36.5]]; // never changes
-var analysisBounds = [[29.0, 33.5], [34.0, 36.5]]; // active bounds for pixel analysis
+// IMS radar image geo-bounds (official IMS values)
+var IMS_BOUNDS = [[29.3, 34.0], [33.5, 36.0]];
+var IMS_BOUNDS_ORIG = [[29.3, 34.0], [33.5, 36.0]]; // never changes
+var analysisBounds = [[29.3, 34.0], [33.5, 36.0]]; // active bounds for pixel analysis
 
 // === SETTLEMENTS DATA ===
 var S = [
@@ -555,4 +555,11 @@ function debugColorTable(imgData, label) {
   }).join(',\n');
   console.log('[\n' + js + '\n]');
 }
+
+
+
+
+
+
+
 

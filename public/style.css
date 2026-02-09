@@ -126,3 +126,6 @@ body.dark .dash-btn{background:#1f2937;border-color:#374151;color:#9ca3af}
   .dash-section{background:#1f2937;border-color:#374151}
   .dash-btn{background:#1f2937;border-color:#374151;color:#9ca3af}
 }
+
+/* Hydro station markers */
+.hydro-marker{background:none!important;border:none!important}

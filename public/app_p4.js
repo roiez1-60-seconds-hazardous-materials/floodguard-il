@@ -562,5 +562,144 @@ function restoreBaseMap() {
   }
 }
 
+// ========== Feature 10: Live Hydro Stations Data ==========
+var hydroStations = null;
+var hydroObs = null;
+var hydroLastFetch = 0;
+var HYDRO_CACHE_MS = 120000; // 2 min cache
+
+function fetchHydroData() {
+  var now = Date.now();
+  if(hydroStations && hydroObs && (now - hydroLastFetch) < HYDRO_CACHE_MS) {
+    return Promise.resolve({stations: hydroStations, obs: hydroObs});
+  }
+  
+  var base = '/api/hydro';
+  return Promise.all([
+    fetch(base + '?type=stations&lang=he').then(function(r){return r.json();}),
+    fetch(base + '?type=observations').then(function(r){return r.json();})
+  ]).then(function(results) {
+    hydroStations = results[0];
+    hydroObs = results[1];
+    hydroLastFetch = Date.now();
+    console.log('💧 Hydro data loaded:', Object.keys(hydroStations).length, 'stations');
+    return {stations: hydroStations, obs: hydroObs};
+  }).catch(function(e) {
+    console.warn('💧 Hydro fetch error:', e);
+    return null;
+  });
+}
+
+function getHydroLevel(stationId, obs) {
+  // obs format: [{"2026-02-02 10:00:00":{"49":[flow,level],...}}]
+  if(!obs || !obs.length) return null;
+  var latest = obs[0];
+  var time = Object.keys(latest)[0];
+  var readings = latest[time];
+  if(!readings || !readings[stationId]) return null;
+  return {time: time, flow: readings[stationId][0], level: readings[stationId][1]};
+}
+
+function getFlowStatus(flow, thresholds) {
+  // thresholds: [weak, medium, strong, veryStrong, extreme, catastrophic]
+  if(!thresholds || !flow) return {text: 'ללא זרימה', color: '#666', icon: '⚪'};
+  if(flow < 0.01) return {text: 'ללא זרימה', color: '#666', icon: '⚪'};
+  if(flow < thresholds[0]) return {text: 'זרימה חלשה', color: '#4ade80', icon: '🟢'};
+  if(flow < thresholds[1]) return {text: 'זרימה בינונית', color: '#facc15', icon: '🟡'};
+  if(flow < thresholds[2]) return {text: 'זרימה חזקה', color: '#fb923c', icon: '🟠'};
+  if(flow < thresholds[3]) return {text: 'זרימה חזקה מאוד', color: '#ef4444', icon: '🔴'};
+  if(flow < thresholds[4]) return {text: 'זרימה קיצונית', color: '#dc2626', icon: '🔴'};
+  return {text: 'שיטפון קיצוני!', color: '#7f1d1d', icon: '🟣'};
+}
+
+function buildStationPopup(station, stationId, reading) {
+  var status = getFlowStatus(reading ? reading.flow : 0, station.threshold);
+  var html = '<div style="direction:rtl;min-width:200px;font-family:Arial,sans-serif">';
+  html += '<div style="font-weight:bold;font-size:14px;margin-bottom:6px">' + status.icon + ' ' + station.name_he + '</div>';
+  
+  if(reading && reading.flow > 0.01) {
+    html += '<div style="background:' + status.color + '22;border-right:3px solid ' + status.color + ';padding:6px;border-radius:4px;margin:4px 0">';
+    html += '<b>' + status.text + '</b></div>';
+    html += '<table style="font-size:12px;width:100%;margin-top:4px">';
+    html += '<tr><td>💧 ספיקה:</td><td><b>' + reading.flow.toFixed(2) + '</b> מ״ק/שניה</td></tr>';
+    if(reading.level > 0) {
+      html += '<tr><td>📏 גובה מים:</td><td><b>' + reading.level.toFixed(2) + '</b> מ׳</td></tr>';
+    }
+    html += '<tr><td>🕐 עדכון:</td><td>' + reading.time + '</td></tr>';
+    html += '</table>';
+  } else {
+    html += '<div style="color:#999;font-size:12px">אין זרימה כרגע</div>';
+  }
+  
+  html += '<div style="margin-top:6px;font-size:10px;color:#888">';
+  html += 'תחנה #' + stationId + ' | ';
+  html += '<a href="https://hydro.water.gov.il/index.php/?page=hydro_obs&lang=he#map" target="_blank">אתר השירות ההידרולוגי</a>';
+  html += '</div></div>';
+  return html;
+}
+
+// Add hydro station markers to map
+var hydroMarkersLayer = null;
+
+function showHydroStations() {
+  if(hydroMarkersLayer) {
+    map.removeLayer(hydroMarkersLayer);
+    hydroMarkersLayer = null;
+  }
+  
+  fetchHydroData().then(function(data) {
+    if(!data) { setStatus('⚠️ שגיאה בטעינת נתוני ספיקה'); return; }
+    
+    var markers = [];
+    var activeCount = 0;
+    var stations = data.stations;
+    var obs = data.obs;
+    
+    // stations is an object keyed by ID
+    Object.keys(stations).forEach(function(id) {
+      var s = stations[id];
+      if(!s.lat || !s.lon) return;
+      
+      var reading = getHydroLevel(id, obs);
+      var status = getFlowStatus(reading ? reading.flow : 0, s.threshold);
+      
+      if(reading && reading.flow > 0.01) activeCount++;
+      
+      var icon = L.divIcon({
+        html: '<div style="font-size:16px;text-shadow:1px 1px 2px white">' + status.icon + '</div>',
+        className: 'hydro-marker',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+      });
+      
+      var marker = L.marker([s.lat, s.lon], {icon: icon});
+      marker.bindPopup(function() {
+        return buildStationPopup(s, id, reading);
+      }, {maxWidth: 280});
+      markers.push(marker);
+    });
+    
+    hydroMarkersLayer = L.layerGroup(markers);
+    hydroMarkersLayer.addTo(map);
+    activeOverlays['hydro'] = hydroMarkersLayer;
+    
+    setStatus('💧 ' + markers.length + ' תחנות הידרולוגיות | ' + activeCount + ' עם זרימה פעילה');
+  });
+}
+
+function toggleHydroStations() {
+  if(activeOverlays['hydro']) {
+    map.removeLayer(activeOverlays['hydro']);
+    delete activeOverlays['hydro'];
+    hydroMarkersLayer = null;
+    var btn = document.getElementById('btn_hydro');
+    if(btn) btn.classList.remove('on');
+  } else {
+    var btn = document.getElementById('btn_hydro');
+    if(btn) btn.classList.add('on');
+    showHydroStations();
+  }
+}
+
 // Init layers
 initMapLayers();

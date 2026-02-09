@@ -570,24 +570,22 @@ var HYDRO_CACHE_MS = 120000; // 2 min cache
 
 function fetchHydroData() {
   var now = Date.now();
-  if(hydroStations && hydroObs && (now - hydroLastFetch) < HYDRO_CACHE_MS) {
-    return Promise.resolve({stations: hydroStations, obs: hydroObs});
+  if(hydroStations && (now - hydroLastFetch) < HYDRO_CACHE_MS) {
+    return Promise.resolve({stations: hydroStations});
   }
   
-  var base = '/api/hydro';
-  return Promise.all([
-    fetch(base + '?type=stations&lang=he').then(function(r){return r.json();}),
-    fetch(base + '?type=observations').then(function(r){return r.json();})
-  ]).then(function(results) {
-    hydroStations = results[0];
-    hydroObs = results[1];
-    hydroLastFetch = Date.now();
-    console.log('💧 Hydro data loaded:', Object.keys(hydroStations).length, 'stations');
-    return {stations: hydroStations, obs: hydroObs};
-  }).catch(function(e) {
-    console.warn('💧 Hydro fetch error:', e);
-    return null;
-  });
+  return fetch('/hydro_stations.json')
+    .then(function(r){return r.json();})
+    .then(function(data) {
+      // data is array with one object: [{id: {name_he, lat, lon, threshold, ...}, ...}]
+      hydroStations = Array.isArray(data) ? data[0] : data;
+      hydroLastFetch = Date.now();
+      console.log('💧 Hydro stations loaded:', Object.keys(hydroStations).length);
+      return {stations: hydroStations};
+    }).catch(function(e) {
+      console.warn('💧 Hydro fetch error:', e);
+      return null;
+    });
 }
 
 function getHydroLevel(stationId, obs) {
@@ -612,29 +610,37 @@ function getFlowStatus(flow, thresholds) {
   return {text: 'שיטפון קיצוני!', color: '#7f1d1d', icon: '🟣'};
 }
 
-function buildStationPopup(station, stationId, reading) {
-  var status = getFlowStatus(reading ? reading.flow : 0, station.threshold);
+function buildStationPopup(station, stationId) {
+  var th = station.threshold || [];
   var html = '<div style="direction:rtl;min-width:200px;font-family:Arial,sans-serif">';
-  html += '<div style="font-weight:bold;font-size:14px;margin-bottom:6px">' + status.icon + ' ' + station.name_he + '</div>';
+  html += '<div style="font-weight:bold;font-size:14px;margin-bottom:6px">💧 ' + station.name_he + '</div>';
+  html += '<div style="font-size:11px;color:#666;margin-bottom:6px">' + (station.name_en || '') + '</div>';
   
-  if(reading && reading.flow > 0.01) {
-    html += '<div style="background:' + status.color + '22;border-right:3px solid ' + status.color + ';padding:6px;border-radius:4px;margin:4px 0">';
-    html += '<b>' + status.text + '</b></div>';
-    html += '<table style="font-size:12px;width:100%;margin-top:4px">';
-    html += '<tr><td>💧 ספיקה:</td><td><b>' + reading.flow.toFixed(2) + '</b> מ״ק/שניה</td></tr>';
-    if(reading.level > 0) {
-      html += '<tr><td>📏 גובה מים:</td><td><b>' + reading.level.toFixed(2) + '</b> מ׳</td></tr>';
-    }
-    html += '<tr><td>🕐 עדכון:</td><td>' + reading.time + '</td></tr>';
+  // Station info
+  html += '<table style="font-size:12px;width:100%;border-collapse:collapse">';
+  html += '<tr><td style="padding:2px 0">📍 מיקום:</td><td>' + station.lat.toFixed(4) + ', ' + station.lon.toFixed(4) + '</td></tr>';
+  
+  // Threshold table
+  if(th.length >= 6) {
     html += '</table>';
-  } else {
-    html += '<div style="color:#999;font-size:12px">אין זרימה כרגע</div>';
+    html += '<div style="margin-top:8px;font-weight:bold;font-size:12px">סף ספיקות (מ״ק/שנייה):</div>';
+    html += '<table style="font-size:11px;width:100%;border-collapse:collapse;margin-top:4px">';
+    html += '<tr style="background:#f0fdf4"><td style="padding:2px 4px">🟢 חלשה</td><td>&lt; ' + th[0] + '</td></tr>';
+    html += '<tr style="background:#fefce8"><td style="padding:2px 4px">🟡 בינונית</td><td>' + th[0] + ' - ' + th[1] + '</td></tr>';
+    html += '<tr style="background:#fff7ed"><td style="padding:2px 4px">🟠 חזקה</td><td>' + th[1] + ' - ' + th[2] + '</td></tr>';
+    html += '<tr style="background:#fef2f2"><td style="padding:2px 4px">🔴 חזקה מאוד</td><td>' + th[2] + ' - ' + th[3] + '</td></tr>';
+    html += '<tr style="background:#fef2f2"><td style="padding:2px 4px">🟣 קיצונית</td><td>&gt; ' + th[4] + '</td></tr>';
   }
+  html += '</table>';
   
-  html += '<div style="margin-top:6px;font-size:10px;color:#888">';
-  html += 'תחנה #' + stationId + ' | ';
-  html += '<a href="https://hydro.water.gov.il/index.php/?page=hydro_obs&lang=he#map" target="_blank">אתר השירות ההידרולוגי</a>';
-  html += '</div></div>';
+  // Link to hydro site
+  html += '<div style="margin-top:8px;text-align:center">';
+  html += '<a href="https://hydro.water.gov.il/index.php/?page=hydro_obs&lang=he#map" target="_blank" ';
+  html += 'style="display:inline-block;background:#2563eb;color:white;padding:4px 12px;border-radius:4px;text-decoration:none;font-size:12px">';
+  html += '🌊 צפייה בנתונים חיים</a></div>';
+  
+  html += '<div style="margin-top:4px;font-size:10px;color:#aaa;text-align:center">תחנה #' + stationId + ' | השירות ההידרולוגי</div>';
+  html += '</div>';
   return html;
 }
 
@@ -648,33 +654,25 @@ function showHydroStations() {
   }
   
   fetchHydroData().then(function(data) {
-    if(!data) { setStatus('⚠️ שגיאה בטעינת נתוני ספיקה'); return; }
+    if(!data) { setStatus('⚠️ שגיאה בטעינת נתוני תחנות'); return; }
     
     var markers = [];
-    var activeCount = 0;
     var stations = data.stations;
-    var obs = data.obs;
     
-    // stations is an object keyed by ID
     Object.keys(stations).forEach(function(id) {
       var s = stations[id];
       if(!s.lat || !s.lon) return;
       
-      var reading = getHydroLevel(id, obs);
-      var status = getFlowStatus(reading ? reading.flow : 0, s.threshold);
-      
-      if(reading && reading.flow > 0.01) activeCount++;
-      
       var icon = L.divIcon({
-        html: '<div style="font-size:16px;text-shadow:1px 1px 2px white">' + status.icon + '</div>',
+        html: '<div style="font-size:14px;text-shadow:1px 1px 2px white">💧</div>',
         className: 'hydro-marker',
-        iconSize: [24, 24],
-        iconAnchor: [12, 12]
+        iconSize: [22, 22],
+        iconAnchor: [11, 11]
       });
       
       var marker = L.marker([s.lat, s.lon], {icon: icon});
       marker.bindPopup(function() {
-        return buildStationPopup(s, id, reading);
+        return buildStationPopup(s, id);
       }, {maxWidth: 280});
       markers.push(marker);
     });
@@ -683,7 +681,7 @@ function showHydroStations() {
     hydroMarkersLayer.addTo(map);
     activeOverlays['hydro'] = hydroMarkersLayer;
     
-    setStatus('💧 ' + markers.length + ' תחנות הידרולוגיות | ' + activeCount + ' עם זרימה פעילה');
+    setStatus('💧 ' + markers.length + ' תחנות הידרולוגיות על המפה');
   });
 }
 
@@ -703,3 +701,10 @@ function toggleHydroStations() {
 
 // Init layers
 initMapLayers();
+
+
+
+
+
+
+

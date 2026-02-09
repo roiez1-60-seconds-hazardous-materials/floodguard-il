@@ -406,14 +406,7 @@ var mapLayers = {};
 var layerControl = null;
 
 function initMapLayers() {
-  // Base layers
-  var baseMaps = {};
-  
   // Already have Google Maps — add satellite and terrain
-  var googleSatellite = L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}&hl=he', {
-    subdomains: '0123', maxZoom: 20, attribution: '© Google'
-  });
-  
   var googleHybrid = L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=he', {
     subdomains: '0123', maxZoom: 20, attribution: '© Google'
   });
@@ -422,96 +415,81 @@ function initMapLayers() {
     subdomains: '0123', maxZoom: 20, attribution: '© Google'
   });
   
-  // Overlay layers
-  
-  // Streams / waterways from OpenStreetMap
-  var streamsLayer = L.tileLayer('https://tile.waymarkedtrails.org/water/{z}/{x}/{y}.png', {
-    maxZoom: 18, opacity: 0.6, attribution: '© waymarkedtrails.org'
-  });
-  
-  // Topography contours (OpenTopoMap)
+  // Topography contours (OpenTopoMap) — full basemap replacement
   var topoLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-    maxZoom: 17, opacity: 0.4, attribution: '© OpenTopoMap',
+    maxZoom: 17, attribution: '© OpenTopoMap',
     subdomains: 'abc'
   });
   
   // Store references
-  mapLayers.satellite = googleSatellite;
   mapLayers.hybrid = googleHybrid;
   mapLayers.terrain = googleTerrain;
-  mapLayers.streams = streamsLayer;
   mapLayers.topo = topoLayer;
-  
-  // Draw known flood-prone wadis/streams as polylines
-  drawFloodZones();
 }
 
-// Known flood-prone wadis and streams in Israel
-var floodZoneLayer = null;
+// ============================================================
+// REAL WATERWAYS — fetch from Overpass API (OpenStreetMap)
+// ============================================================
+var waterLayer = null;
+var waterLoaded = false;
 
-function drawFloodZones() {
-  var wadis = [
-    // Nahal Ayalon (תל אביב area)
-    {name:'נחל איילון', color:'#3b82f6', points:[[32.12,34.81],[32.10,34.80],[32.08,34.79],[32.05,34.78],[32.02,34.77],[31.99,34.76]]},
-    // Nahal Alexander (נתניה)
-    {name:'נחל אלכסנדר', color:'#3b82f6', points:[[32.38,34.88],[32.36,34.87],[32.34,34.86],[32.33,34.85]]},
-    // Nahal Kishon (חיפה)
-    {name:'נחל קישון', color:'#3b82f6', points:[[32.82,35.08],[32.80,35.04],[32.79,35.00],[32.78,34.97],[32.79,34.96]]},
-    // Nahal Sorek (ירושלים area)
-    {name:'נחל שורק', color:'#2563eb', points:[[31.77,35.20],[31.75,35.12],[31.73,35.05],[31.71,34.95],[31.70,34.85],[31.69,34.75]]},
-    // Nahal Lachish (אשדוד)
-    {name:'נחל לכיש', color:'#2563eb', points:[[31.61,34.88],[31.64,34.84],[31.68,34.80],[31.72,34.76],[31.78,34.68]]},
-    // Nahal Beer Sheva
-    {name:'נחל באר שבע', color:'#60a5fa', points:[[31.30,34.90],[31.28,34.85],[31.26,34.80],[31.24,34.78]]},
-    // Nahal HaYarkon (תל אביב)
-    {name:'נחל הירקון', color:'#3b82f6', points:[[32.10,34.89],[32.09,34.87],[32.09,34.85],[32.09,34.82],[32.09,34.80],[32.09,34.78]]},
-    // Nahal Hadera
-    {name:'נחל חדרה', color:'#3b82f6', points:[[32.46,34.95],[32.45,34.93],[32.44,34.91],[32.44,34.89]]},
-    // Nahal Poleg (נתניה)
-    {name:'נחל פולג', color:'#3b82f6', points:[[32.31,34.88],[32.30,34.87],[32.29,34.86],[32.29,34.85]]},
-    // Nahal Tzin (נגב)
-    {name:'נחל צין', color:'#93c5fd', points:[[30.85,35.20],[30.82,35.10],[30.80,35.00],[30.78,34.90],[30.76,34.80]]},
-  ];
+function loadWaterways() {
+  if(waterLoaded && waterLayer) return waterLayer;
   
-  var lines = [];
-  wadis.forEach(function(w) {
-    var line = L.polyline(w.points, {
-      color: w.color, weight: 3, opacity: 0.7, dashArray: '8,6',
-      className: 'wadi-line'
-    }).bindPopup('<b>🌊 '+w.name+'</b><br><span style="font-size:11px">אזור מועד להצפות</span>');
-    lines.push(line);
-  });
+  setStatus('🌊 טוען נחלים ונהרות מ-OpenStreetMap...');
   
-  floodZoneLayer = L.layerGroup(lines);
+  // Overpass query: all waterways (rivers, streams, wadis) in Israel
+  var query = '[out:json][timeout:30];(' +
+    'way["waterway"~"river|stream|wadi"](29.4,34.0,33.4,36.0);' +
+    ');out geom;';
+  var url = 'https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(query);
+  
+  fetch(url)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var lines = [];
+      data.elements.forEach(function(el) {
+        if(!el.geometry || el.geometry.length < 2) return;
+        var latlngs = el.geometry.map(function(p) { return [p.lat, p.lon]; });
+        var name = (el.tags && el.tags.name) ? el.tags.name : '';
+        var nameHe = (el.tags && el.tags['name:he']) ? el.tags['name:he'] : name;
+        var type = el.tags ? el.tags.waterway : '';
+        
+        // Style by type
+        var weight = type === 'river' ? 3 : 2;
+        var color = type === 'river' ? '#2563eb' : type === 'wadi' ? '#60a5fa' : '#3b82f6';
+        
+        var line = L.polyline(latlngs, {
+          color: color, weight: weight, opacity: 0.7
+        });
+        if(nameHe) {
+          line.bindPopup('<b>🌊 ' + nameHe + '</b><br><span style="font-size:11px">' + type + '</span>');
+        }
+        lines.push(line);
+      });
+      
+      waterLayer = L.layerGroup(lines);
+      waterLoaded = true;
+      
+      // If toggle was waiting, add to map now
+      if(activeOverlays['wadis'] === 'loading') {
+        waterLayer.addTo(map);
+        activeOverlays['wadis'] = waterLayer;
+      }
+      
+      setStatus('🌊 נטענו ' + lines.length + ' נחלים ונהרות');
+      console.log('🌊 Loaded ' + lines.length + ' waterways from OSM');
+    })
+    .catch(function(e) {
+      console.warn('🌊 Error loading waterways:', e);
+      setStatus('⚠️ שגיאה בטעינת נחלים');
+      if(activeOverlays['wadis'] === 'loading') {
+        delete activeOverlays['wadis'];
+        var btn = document.getElementById('btn_wadis');
+        if(btn) btn.classList.remove('on');
+      }
+    });
 }
-
-// Known flood-prone areas (polygons)
-var floodAreaLayer = null;
-
-function drawFloodAreas() {
-  var areas = [
-    {name:'אזור הצפה — נמל תל אביב', color:'#dc2626',
-     points:[[32.098,34.770],[32.098,34.782],[32.090,34.782],[32.090,34.770]]},
-    {name:'אזור הצפה — מחלף איילון-20', color:'#dc2626',
-     points:[[32.055,34.775],[32.055,34.790],[32.045,34.790],[32.045,34.775]]},
-    {name:'אזור הצפה — נחל קישון', color:'#dc2626',
-     points:[[32.795,34.965],[32.795,34.985],[32.785,34.985],[32.785,34.965]]},
-    {name:'אזור הצפה — אשדוד דרום', color:'#f59e0b',
-     points:[[31.795,34.640],[31.795,34.660],[31.785,34.660],[31.785,34.640]]},
-  ];
-  
-  var polys = [];
-  areas.forEach(function(a) {
-    var poly = L.polygon(a.points, {
-      color: a.color, fillColor: a.color, fillOpacity: 0.2, weight: 2, dashArray: '4,4'
-    }).bindPopup('<b>⚠️ '+a.name+'</b>');
-    polys.push(poly);
-  });
-  
-  floodAreaLayer = L.layerGroup(polys);
-}
-
-drawFloodAreas();
 
 // Toggle layer visibility
 var activeOverlays = {};
@@ -521,42 +499,54 @@ function toggleLayer(layerName) {
   
   if(activeOverlays[layerName]) {
     // Remove
-    map.removeLayer(activeOverlays[layerName]);
+    if(activeOverlays[layerName] !== 'loading') {
+      map.removeLayer(activeOverlays[layerName]);
+    }
     delete activeOverlays[layerName];
     if(btn) btn.classList.remove('on');
   } else {
     // Add
     var layer = null;
+    if(btn) btn.classList.add('on');
+    
     switch(layerName) {
-      case 'streams': layer = mapLayers.streams; break;
-      case 'topo': layer = mapLayers.topo; break;
-      case 'wadis': layer = floodZoneLayer; break;
-      case 'floods': layer = floodAreaLayer; break;
-      case 'satellite': 
-        // Switch base map
+      case 'wadis':
+        if(waterLoaded && waterLayer) {
+          layer = waterLayer;
+        } else {
+          activeOverlays['wadis'] = 'loading';
+          loadWaterways();
+          return;
+        }
+        break;
+      case 'topo':
+        // Replace base map with topo
         map.eachLayer(function(l) {
           if(l._url && l._url.includes('google.com/vt/lyrs=m')) map.removeLayer(l);
+          if(l._url && l._url.includes('google.com/vt/lyrs=y')) map.removeLayer(l);
+          if(l._url && l._url.includes('google.com/vt/lyrs=p')) map.removeLayer(l);
+          if(l._url && l._url.includes('opentopomap.org')) map.removeLayer(l);
+        });
+        layer = mapLayers.topo;
+        break;
+      case 'satellite': 
+        map.eachLayer(function(l) {
+          if(l._url && l._url.includes('google.com/vt/lyrs=m')) map.removeLayer(l);
+          if(l._url && l._url.includes('google.com/vt/lyrs=p')) map.removeLayer(l);
+          if(l._url && l._url.includes('opentopomap.org')) map.removeLayer(l);
         });
         layer = mapLayers.hybrid;
-        break;
-      case 'terrain':
-        map.eachLayer(function(l) {
-          if(l._url && l._url.includes('google.com/vt/lyrs=m')) map.removeLayer(l);
-        });
-        layer = mapLayers.terrain;
         break;
     }
     if(layer) {
       layer.addTo(map);
       activeOverlays[layerName] = layer;
-      if(btn) btn.classList.add('on');
     }
   }
 }
 
 function restoreBaseMap() {
-  // Remove satellite/terrain, restore regular
-  ['satellite','terrain'].forEach(function(k) {
+  ['satellite','topo'].forEach(function(k) {
     if(activeOverlays[k]) {
       map.removeLayer(activeOverlays[k]);
       delete activeOverlays[k];

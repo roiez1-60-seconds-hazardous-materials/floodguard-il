@@ -2,6 +2,7 @@ module.exports = async function handler(req, res) {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const type = req.query.type || 'stations';
@@ -22,9 +23,13 @@ module.exports = async function handler(req, res) {
   try {
     const headers = {
       'X-Hydro-Client': 'hydro_obs_v2',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
       'Referer': 'https://hydro.water.gov.il/index.php/?page=hydro_obs&lang=he',
-      'Origin': 'https://hydro.water.gov.il'
+      'Origin': 'https://hydro.water.gov.il',
+      'Accept': 'application/json, text/javascript, */*; q=0.01',
+      'Accept-Language': 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7',
+      'X-Requested-With': 'XMLHttpRequest',
+      'Cookie': 'has_js=1'
     };
 
     const fetchOptions = {
@@ -41,12 +46,21 @@ module.exports = async function handler(req, res) {
     const response = await fetch(url, fetchOptions);
     
     if (!response.ok) {
-      return res.status(response.status).json({ 
-        error: 'Upstream error: ' + response.status 
+      return res.status(502).json({ 
+        error: 'Upstream error: ' + response.status,
+        hint: 'The hydrological service may be blocking server requests'
       });
     }
 
     const data = await response.text();
+    
+    // Validate we got JSON
+    if (!data || data.length < 10 || (!data.startsWith('[') && !data.startsWith('{'))) {
+      return res.status(502).json({ 
+        error: 'Invalid response from upstream',
+        preview: data.substring(0, 200)
+      });
+    }
     
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=60');

@@ -9,7 +9,7 @@ var RAINVIEWER_API = 'https://api.rainviewer.com/public/weather-maps.json';
 // IMS Radar image base URL
 var IMS_RADAR_BASE = 'https://ims.gov.il/sites/default/files/ims_data/map_images/IMSRadar4GIS/IMSRadar4GIS_';
 
-// IMS radar image geo-bounds (official IMS values)
+// IMS radar image geo-bounds (from IMS source code)
 var IMS_BOUNDS = [[29.3, 34.0], [33.5, 36.0]];
 var IMS_BOUNDS_ORIG = [[29.3, 34.0], [33.5, 36.0]]; // never changes
 var analysisBounds = [[29.3, 34.0], [33.5, 36.0]]; // active bounds for pixel analysis

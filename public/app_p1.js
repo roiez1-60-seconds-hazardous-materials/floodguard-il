@@ -9,10 +9,10 @@ var RAINVIEWER_API = 'https://api.rainviewer.com/public/weather-maps.json';
 // IMS Radar image base URL
 var IMS_RADAR_BASE = 'https://ims.gov.il/sites/default/files/ims_data/map_images/IMSRadar4GIS/IMSRadar4GIS_';
 
-// IMS radar image geo-bounds (exact values from IMS Leaflet getBounds)
-var IMS_BOUNDS = [[29.447, 31.766], [34.532, 37.865]];
-var IMS_BOUNDS_ORIG = [[29.447, 31.766], [34.532, 37.865]]; // never changes
-var analysisBounds = [[29.447, 31.766], [34.532, 37.865]]; // active bounds for pixel analysis
+// IMS radar image geo-bounds (from IMS source code: imageBounds=[[29.3,34],[33.5,36]])
+var IMS_BOUNDS = [[29.3, 34.0], [33.5, 36.0]];
+var IMS_BOUNDS_ORIG = [[29.3, 34.0], [33.5, 36.0]]; // never changes
+var analysisBounds = [[29.3, 34.0], [33.5, 36.0]]; // active bounds for pixel analysis
 
 // === SETTLEMENTS DATA ===
 var S = [

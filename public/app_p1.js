@@ -9,11 +9,11 @@ var RAINVIEWER_API = 'https://api.rainviewer.com/public/weather-maps.json';
 // IMS Radar image base URL
 var IMS_RADAR_BASE = 'https://ims.gov.il/sites/default/files/ims_data/map_images/IMSRadar4GIS/IMSRadar4GIS_';
 
-// IMS radar image geo-bounds (WGS84 equirectangular)
-// Source: IMS website imageBounds=[[29.3,34],[33.5,36]]
-var IMS_BOUNDS = [[29.3, 34.0], [33.5, 36.0]];
-var IMS_BOUNDS_ORIG = [[29.3, 34.0], [33.5, 36.0]];
-var analysisBounds = [[29.3, 34.0], [33.5, 36.0]];
+// IMS radar image geo-bounds (WGS84)
+// Source: EXACT BOUNDS extracted from IMS Leaflet layer._bounds on 2026-02-17
+var IMS_BOUNDS = [[29.4469, 31.7663], [34.5319, 37.8648]];
+var IMS_BOUNDS_ORIG = [[29.4469, 31.7663], [34.5319, 37.8648]];
+var analysisBounds = [[29.4469, 31.7663], [34.5319, 37.8648]];
 
 // Define ITM projection for reprojection
 if(typeof proj4 !== 'undefined') {
@@ -564,7 +564,7 @@ function toggleSrc(src) {
     
     if(src==='ims') {
       radarSource = 'ims';
-      analysisBounds = [[29.0,33.5],[34.0,36.5]];
+      analysisBounds = [[29.4469, 31.7663], [34.5319, 37.8648]];
       loadIMSRadar();
     }
     if(src==='rainviewer') { radarSource = 'rainviewer'; loadRainViewer(); }

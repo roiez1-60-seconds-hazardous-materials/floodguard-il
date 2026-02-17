@@ -9,12 +9,71 @@ var RAINVIEWER_API = 'https://api.rainviewer.com/public/weather-maps.json';
 // IMS Radar image base URL
 var IMS_RADAR_BASE = 'https://ims.gov.il/sites/default/files/ims_data/map_images/IMSRadar4GIS/IMSRadar4GIS_';
 
-// IMS radar image geo-bounds (corrected for Web Mercator / OSM)
-// Image is 940x940px square, ~466km each direction, centered at lon 35.0
-// IMS ITM bounds [[29.3,34],[33.5,36]] need lon expansion for WGS84: 4.2° lat = 4.95° lon at lat 31.4
-var IMS_BOUNDS = [[29.3, 32.52], [33.5, 37.48]];
-var IMS_BOUNDS_ORIG = [[29.3, 32.52], [33.5, 37.48]]; // never changes
-var analysisBounds = [[29.3, 32.52], [33.5, 37.48]]; // active bounds for pixel analysis
+// IMS radar image geo-bounds (WGS84 equirectangular)
+// Source: IMS website imageBounds=[[29.3,34],[33.5,36]]
+var IMS_BOUNDS = [[29.3, 34.0], [33.5, 36.0]];
+var IMS_BOUNDS_ORIG = [[29.3, 34.0], [33.5, 36.0]];
+var analysisBounds = [[29.3, 34.0], [33.5, 36.0]];
+
+// Define ITM projection for reprojection
+if(typeof proj4 !== 'undefined') {
+  proj4.defs('EPSG:2039', '+proj=tmerc +lat_0=31.7343936111111 +lon_0=35.2045169444444 +k=1.0000067 +x_0=219529.584 +y_0=626907.39 +ellps=GRS80 +towgs84=23.772,17.49,17.859,-0.3132,-1.85274,1.67299,-5.4262 +units=m +no_defs');
+}
+
+// Reproject IMS radar image from ITM (EPSG:2039) to WGS84 (EPSG:4326)
+function reprojectRadarImage(sourceImg, bounds) {
+  var south = bounds[0][0], west = bounds[0][1];
+  var north = bounds[1][0], east = bounds[1][1];
+  
+  // Convert WGS84 bounds corners to ITM
+  var swITM = proj4('EPSG:4326', 'EPSG:2039', [west, south]);
+  var neITM = proj4('EPSG:4326', 'EPSG:2039', [east, north]);
+  
+  var srcCanvas = document.createElement('canvas');
+  srcCanvas.width = sourceImg.width; srcCanvas.height = sourceImg.height;
+  var srcCtx = srcCanvas.getContext('2d');
+  srcCtx.drawImage(sourceImg, 0, 0);
+  var srcData = srcCtx.getImageData(0, 0, sourceImg.width, sourceImg.height);
+  
+  // Use same dimensions as source for quality
+  var outW = sourceImg.width, outH = sourceImg.height;
+  var outCanvas = document.createElement('canvas');
+  outCanvas.width = outW; outCanvas.height = outH;
+  var outCtx = outCanvas.getContext('2d');
+  var outData = outCtx.createImageData(outW, outH);
+  
+  var itmW = neITM[0] - swITM[0];
+  var itmH = neITM[1] - swITM[1];
+  var srcW = sourceImg.width, srcH = sourceImg.height;
+  var t0 = performance.now();
+  
+  // Build lookup: precompute ITM easting for each column (lon is constant per column)
+  // and ITM northing for each row (lat varies with lon in TM, but we compute per pixel)
+  for(var py = 0; py < outH; py++) {
+    var lat = north - (py / outH) * (north - south);
+    for(var px = 0; px < outW; px++) {
+      var lon = west + (px / outW) * (east - west);
+      var itm = proj4('EPSG:4326', 'EPSG:2039', [lon, lat]);
+      
+      var sx = ((itm[0] - swITM[0]) / itmW * (srcW - 1)) | 0;
+      var sy = ((neITM[1] - itm[1]) / itmH * (srcH - 1)) | 0;
+      
+      if(sx >= 0 && sx < srcW && sy >= 0 && sy < srcH) {
+        var si = (sy * srcW + sx) << 2;
+        var di = (py * outW + px) << 2;
+        outData.data[di]     = srcData.data[si];
+        outData.data[di + 1] = srcData.data[si + 1];
+        outData.data[di + 2] = srcData.data[si + 2];
+        outData.data[di + 3] = srcData.data[si + 3];
+      }
+    }
+  }
+  
+  outCtx.putImageData(outData, 0, 0);
+  var elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+  console.log('📡 [שמ"ט] ✅ Reprojection ITM→WGS84 complete (' + outW + 'x' + outH + ') in ' + elapsed + 's');
+  return outCanvas;
+}
 
 // === SETTLEMENTS DATA ===
 var S = [
@@ -223,7 +282,7 @@ function tryIMSPattern(ts, patternIdx, attempt, dateObj) {
     
     console.log('📡 [שמ"ט] ✅ נמצאה תמונה! ' + patternName + ' timestamp=' + ts + ', גודל=' + img.width + 'x' + img.height);
     
-    // Success! Show on map
+    // Show image directly on map (IMSRadar4GIS is already WGS84-compatible)
     if(imsOverlay) map.removeLayer(imsOverlay);
     imsOverlay = L.imageOverlay(img.src, IMS_BOUNDS, {opacity: 0.6}).addTo(map);
     
@@ -231,8 +290,8 @@ function tryIMSPattern(ts, patternIdx, attempt, dateObj) {
     var cvs = document.createElement('canvas');
     cvs.width = img.width; cvs.height = img.height;
     var ctx = cvs.getContext('2d');
-    ctx.drawImage(img,0,0);
-    radarImageData = ctx.getImageData(0,0,cvs.width,cvs.height);
+    ctx.drawImage(img, 0, 0);
+    radarImageData = ctx.getImageData(0, 0, cvs.width, cvs.height);
     
     // Remember which pattern worked for future use
     window._imsWorkingPattern = patternIdx;

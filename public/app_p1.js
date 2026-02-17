@@ -10,26 +10,107 @@ var RAINVIEWER_API = 'https://api.rainviewer.com/public/weather-maps.json';
 var IMS_RADAR_BASE = 'https://ims.gov.il/sites/default/files/ims_data/map_images/IMSRadar4GIS/IMSRadar4GIS_';
 
 // IMS radar image geo-bounds (WGS84 / EPSG:4326)
-// IMS source code says [[29.3,34],[33.5,36]] but internally Leaflet reprojects to:
-// SW: 29.4469, 31.7663  NE: 34.5319, 37.8648
-// We must use the reprojected values since we don't have IMS's proj4 setup
-var IMS_BOUNDS = [[29.4469, 31.7663], [34.5319, 37.8648]];
-var IMS_BOUNDS_ORIG = [[29.4469, 31.7663], [34.5319, 37.8648]];
-var analysisBounds = [[29.4469, 31.7663], [34.5319, 37.8648]];
+// Source: IMS source code: var imageBounds = [[29.3, 34], [33.5, 36]]
+// The image is in ITM projection - needs reprojection via proj4
+var IMS_BOUNDS = [[29.3, 34.0], [33.5, 36.0]];
+var IMS_BOUNDS_ORIG = [[29.3, 34.0], [33.5, 36.0]];
+var analysisBounds = [[29.3, 34.0], [33.5, 36.0]];
 
-// Define ITM projection for reprojection
-if(typeof proj4 !== 'undefined') {
-  proj4.defs('EPSG:2039', '+proj=tmerc +lat_0=31.7343936111111 +lon_0=35.2045169444444 +k=1.0000067 +x_0=219529.584 +y_0=626907.39 +ellps=GRS80 +towgs84=23.772,17.49,17.859,-0.3132,-1.85274,1.67299,-5.4262 +units=m +no_defs');
-}
+// Load proj4 dynamically if not already loaded
+var proj4Ready = false;
+(function loadProj4() {
+  if(typeof proj4 !== 'undefined') {
+    proj4.defs('EPSG:2039', '+proj=tmerc +lat_0=31.7343936111111 +lon_0=35.2045169444444 +k=1.0000067 +x_0=219529.584 +y_0=626907.39 +ellps=GRS80 +towgs84=23.772,17.49,17.859,-0.3132,-1.85274,1.67299,-5.4262 +units=m +no_defs');
+    proj4Ready = true;
+    console.log('📡 proj4 already loaded');
+    return;
+  }
+  var s = document.createElement('script');
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js';
+  s.onload = function() {
+    proj4.defs('EPSG:2039', '+proj=tmerc +lat_0=31.7343936111111 +lon_0=35.2045169444444 +k=1.0000067 +x_0=219529.584 +y_0=626907.39 +ellps=GRS80 +towgs84=23.772,17.49,17.859,-0.3132,-1.85274,1.67299,-5.4262 +units=m +no_defs');
+    proj4Ready = true;
+    console.log('📡 proj4 loaded successfully');
+  };
+  s.onerror = function() { console.warn('📡 proj4 failed to load - radar positioning may be inaccurate'); };
+  document.head.appendChild(s);
+})();
 
-// Reproject IMS radar image from ITM (EPSG:2039) to WGS84 (EPSG:4326)
-function reprojectRadarImage(sourceImg, bounds) {
-  var south = bounds[0][0], west = bounds[0][1];
-  var north = bounds[1][0], east = bounds[1][1];
+// Reproject IMS bounds from ITM concept to correct WGS84 bounds
+// The IMS image covers ITM grid that maps to these WGS84 bounds
+// We compute the correct WGS84 bounds by sampling the ITM grid
+function computeWGS84Bounds(itmBounds) {
+  if(typeof proj4 === 'undefined') return itmBounds;
   
-  // Convert WGS84 bounds corners to ITM
+  // IMS imageBounds [[29.3, 34], [33.5, 36]] are NOT lat/lon
+  // They are ITM-related coordinates. The image is 940x940 pixels
+  // covering an ITM grid. We need to find the WGS84 extent.
+  
+  // Actually - let's just use the exact bounds we extracted from IMS Leaflet:
+  // SW: lat=29.4469, lng=31.7663  NE: lat=34.5319, lng=37.8648
+  // But those didn't work because the IMAGE itself is in ITM projection
+  // and needs pixel reprojection, not just bounds adjustment.
+  
+  // The correct approach: the image IS in ITM projection.
+  // IMS uses Leaflet.Proj plugin to handle this automatically.
+  // We don't have that plugin, so we need to reproject the image pixels.
+  
+  var south = itmBounds[0][0], west = itmBounds[0][1];
+  var north = itmBounds[1][0], east = itmBounds[1][1];
+  
+  // Convert corners from WGS84 to ITM to understand the ITM extent
   var swITM = proj4('EPSG:4326', 'EPSG:2039', [west, south]);
   var neITM = proj4('EPSG:4326', 'EPSG:2039', [east, north]);
+  
+  console.log('📡 ITM extent: SW easting=' + swITM[0].toFixed(0) + ' northing=' + swITM[1].toFixed(0) +
+              ' NE easting=' + neITM[0].toFixed(0) + ' northing=' + neITM[1].toFixed(0));
+  
+  // Find the actual WGS84 extent by converting ITM corners back
+  // The ITM grid is rectangular, but in WGS84 the edges curve
+  // Sample multiple points along edges to find true min/max
+  var minLat = 999, maxLat = -999, minLon = 999, maxLon = -999;
+  var steps = 20;
+  for(var i = 0; i <= steps; i++) {
+    var frac = i / steps;
+    // Bottom edge
+    var ptB = proj4('EPSG:2039', 'EPSG:4326', [
+      swITM[0] + frac * (neITM[0] - swITM[0]), swITM[1]
+    ]);
+    // Top edge
+    var ptT = proj4('EPSG:2039', 'EPSG:4326', [
+      swITM[0] + frac * (neITM[0] - swITM[0]), neITM[1]
+    ]);
+    // Left edge
+    var ptL = proj4('EPSG:2039', 'EPSG:4326', [
+      swITM[0], swITM[1] + frac * (neITM[1] - swITM[1])
+    ]);
+    // Right edge
+    var ptR = proj4('EPSG:2039', 'EPSG:4326', [
+      neITM[0], swITM[1] + frac * (neITM[1] - swITM[1])
+    ]);
+    
+    [ptB, ptT, ptL, ptR].forEach(function(pt) {
+      if(pt[1] < minLat) minLat = pt[1];
+      if(pt[1] > maxLat) maxLat = pt[1];
+      if(pt[0] < minLon) minLon = pt[0];
+      if(pt[0] > maxLon) maxLon = pt[0];
+    });
+  }
+  
+  console.log('📡 WGS84 computed bounds: SW lat=' + minLat.toFixed(4) + ' lon=' + minLon.toFixed(4) +
+              ' NE lat=' + maxLat.toFixed(4) + ' lon=' + maxLon.toFixed(4));
+  
+  return [[minLat, minLon], [maxLat, maxLon]];
+}
+
+// Reproject IMS radar image pixels from ITM to WGS84
+function reprojectRadarImage(sourceImg, wgs84Bounds) {
+  var south = wgs84Bounds[0][0], west = wgs84Bounds[0][1];
+  var north = wgs84Bounds[1][0], east = wgs84Bounds[1][1];
+  
+  // The source image is on an ITM grid
+  var swITM = proj4('EPSG:4326', 'EPSG:2039', [IMS_BOUNDS[0][1], IMS_BOUNDS[0][0]]);
+  var neITM = proj4('EPSG:4326', 'EPSG:2039', [IMS_BOUNDS[1][1], IMS_BOUNDS[1][0]]);
   
   var srcCanvas = document.createElement('canvas');
   srcCanvas.width = sourceImg.width; srcCanvas.height = sourceImg.height;
@@ -37,7 +118,6 @@ function reprojectRadarImage(sourceImg, bounds) {
   srcCtx.drawImage(sourceImg, 0, 0);
   var srcData = srcCtx.getImageData(0, 0, sourceImg.width, sourceImg.height);
   
-  // Use same dimensions as source for quality
   var outW = sourceImg.width, outH = sourceImg.height;
   var outCanvas = document.createElement('canvas');
   outCanvas.width = outW; outCanvas.height = outH;
@@ -49,12 +129,11 @@ function reprojectRadarImage(sourceImg, bounds) {
   var srcW = sourceImg.width, srcH = sourceImg.height;
   var t0 = performance.now();
   
-  // Build lookup: precompute ITM easting for each column (lon is constant per column)
-  // and ITM northing for each row (lat varies with lon in TM, but we compute per pixel)
   for(var py = 0; py < outH; py++) {
     var lat = north - (py / outH) * (north - south);
     for(var px = 0; px < outW; px++) {
       var lon = west + (px / outW) * (east - west);
+      // Convert output WGS84 pixel position to ITM to find source pixel
       var itm = proj4('EPSG:4326', 'EPSG:2039', [lon, lat]);
       
       var sx = ((itm[0] - swITM[0]) / itmW * (srcW - 1)) | 0;
@@ -284,13 +363,22 @@ function tryIMSPattern(ts, patternIdx, attempt, dateObj) {
     
     console.log('📡 [שמ"ט] ✅ נמצאה תמונה! ' + patternName + ' timestamp=' + ts + ', גודל=' + img.width + 'x' + img.height);
     
-    // Show image directly on map (IMSRadar4GIS is already WGS84-compatible)
+    // Show image on map - reproject from ITM if proj4 is available
     if(imsOverlay) map.removeLayer(imsOverlay);
-    console.log('📡 [מכ"מ] overlay bounds:', JSON.stringify(IMS_BOUNDS));
-    console.log('📡 [מכ"מ] map CRS:', map.options.crs.code);
-    imsOverlay = L.imageOverlay(img.src, IMS_BOUNDS, {opacity: 0.6}).addTo(map);
+    
+    if(proj4Ready) {
+      console.log('📡 [מכ"מ] computing correct WGS84 bounds and reprojecting...');
+      var wgs84Bounds = computeWGS84Bounds(IMS_BOUNDS);
+      var reprojCanvas = reprojectRadarImage(img, wgs84Bounds);
+      var reprojUrl = reprojCanvas.toDataURL();
+      imsOverlay = L.imageOverlay(reprojUrl, wgs84Bounds, {opacity: 0.6}).addTo(map);
+      console.log('📡 [מכ"מ] reprojected overlay bounds:', JSON.stringify(wgs84Bounds));
+    } else {
+      console.warn('📡 [מכ"מ] proj4 not loaded - using raw bounds (position may be inaccurate)');
+      imsOverlay = L.imageOverlay(img.src, IMS_BOUNDS, {opacity: 0.6}).addTo(map);
+    }
     var ob = imsOverlay.getBounds();
-    console.log('📡 [מכ"מ] overlay getBounds SW:', ob.getSouthWest().lat, ob.getSouthWest().lng, 'NE:', ob.getNorthEast().lat, ob.getNorthEast().lng);
+    console.log('📡 [מכ"מ] final overlay SW:', ob.getSouthWest().lat.toFixed(4), ob.getSouthWest().lng.toFixed(4), 'NE:', ob.getNorthEast().lat.toFixed(4), ob.getNorthEast().lng.toFixed(4));
     
     // Store image data for analysis
     var cvs = document.createElement('canvas');
@@ -570,7 +658,7 @@ function toggleSrc(src) {
     
     if(src==='ims') {
       radarSource = 'ims';
-      analysisBounds = [[29.4469, 31.7663], [34.5319, 37.8648]];
+      analysisBounds = [[29.3, 34.0], [33.5, 36.0]];
       loadIMSRadar();
     }
     if(src==='rainviewer') { radarSource = 'rainviewer'; loadRainViewer(); }
@@ -622,4 +710,3 @@ function debugColorTable(imgData, label) {
   }).join(',\n');
   console.log('[\n' + js + '\n]');
 }
-

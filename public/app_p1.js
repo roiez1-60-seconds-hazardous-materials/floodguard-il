@@ -9,10 +9,12 @@ var RAINVIEWER_API = 'https://api.rainviewer.com/public/weather-maps.json';
 // IMS Radar image base URL
 var IMS_RADAR_BASE = 'https://ims.gov.il/sites/default/files/ims_data/map_images/IMSRadar4GIS/IMSRadar4GIS_';
 
-// IMS radar image geo-bounds (from IMS source code: imageBounds=[[29.3,34],[33.5,36]])
-var IMS_BOUNDS = [[29.3, 34.0], [33.5, 36.0]];
-var IMS_BOUNDS_ORIG = [[29.3, 34.0], [33.5, 36.0]]; // never changes
-var analysisBounds = [[29.3, 34.0], [33.5, 36.0]]; // active bounds for pixel analysis
+// IMS radar image geo-bounds (corrected for Web Mercator / OSM)
+// Image is 940x940px square, ~466km each direction, centered at lon 35.0
+// IMS ITM bounds [[29.3,34],[33.5,36]] need lon expansion for WGS84: 4.2° lat = 4.95° lon at lat 31.4
+var IMS_BOUNDS = [[29.3, 32.52], [33.5, 37.48]];
+var IMS_BOUNDS_ORIG = [[29.3, 32.52], [33.5, 37.48]]; // never changes
+var analysisBounds = [[29.3, 32.52], [33.5, 37.48]]; // active bounds for pixel analysis
 
 // === SETTLEMENTS DATA ===
 var S = [
@@ -555,3 +557,4 @@ function debugColorTable(imgData, label) {
   }).join(',\n');
   console.log('[\n' + js + '\n]');
 }
+

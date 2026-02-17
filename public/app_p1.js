@@ -10,12 +10,12 @@ var RAINVIEWER_API = 'https://api.rainviewer.com/public/weather-maps.json';
 var IMS_RADAR_BASE = 'https://ims.gov.il/sites/default/files/ims_data/map_images/IMSRadar4GIS/IMSRadar4GIS_';
 
 // IMS radar image geo-bounds (WGS84 / EPSG:4326)
-// Source: IMS source code: var imageBounds = [[29.3, 34], [33.5, 36]]
-// Format: [[south, west], [north, east]]
-// Verified: IMS uses EPSG:3857 map with WGS84 bounds input to L.imageOverlay
-var IMS_BOUNDS = [[29.3, 34.0], [33.5, 36.0]];
-var IMS_BOUNDS_ORIG = [[29.3, 34.0], [33.5, 36.0]];
-var analysisBounds = [[29.3, 34.0], [33.5, 36.0]];
+// IMS source code says [[29.3,34],[33.5,36]] but internally Leaflet reprojects to:
+// SW: 29.4469, 31.7663  NE: 34.5319, 37.8648
+// We must use the reprojected values since we don't have IMS's proj4 setup
+var IMS_BOUNDS = [[29.4469, 31.7663], [34.5319, 37.8648]];
+var IMS_BOUNDS_ORIG = [[29.4469, 31.7663], [34.5319, 37.8648]];
+var analysisBounds = [[29.4469, 31.7663], [34.5319, 37.8648]];
 
 // Define ITM projection for reprojection
 if(typeof proj4 !== 'undefined') {
@@ -570,7 +570,7 @@ function toggleSrc(src) {
     
     if(src==='ims') {
       radarSource = 'ims';
-      analysisBounds = [[29.3, 34.0], [33.5, 36.0]];
+      analysisBounds = [[29.4469, 31.7663], [34.5319, 37.8648]];
       loadIMSRadar();
     }
     if(src==='rainviewer') { radarSource = 'rainviewer'; loadRainViewer(); }

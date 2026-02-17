@@ -9,13 +9,12 @@ var RAINVIEWER_API = 'https://api.rainviewer.com/public/weather-maps.json';
 // IMS Radar image base URL
 var IMS_RADAR_BASE = 'https://ims.gov.il/sites/default/files/ims_data/map_images/IMSRadar4GIS/IMSRadar4GIS_';
 
-// IMS radar image geo-bounds (WGS84 / EPSG:4326)
-// Computed from IMS pixel analysis: Haifa(32.794,34.990)=pixel(497,237) in 940x940
-// TL point(33.5,34) at image fraction(0.367,0.111), BR point(29.3,36) at fraction(0.695,0.931)
-// Verification: Haifa error = 0.016° lat, 0.001° lon
-var IMS_BOUNDS = [[28.9484, 31.7637], [34.0672, 37.8626]];
-var IMS_BOUNDS_ORIG = [[28.9484, 31.7637], [34.0672, 37.8626]];
-var analysisBounds = [[28.9484, 31.7637], [34.0672, 37.8626]];
+// IMS radar image geo-bounds
+// Source: IMS Leaflet layer.getBounds() - verified against city positions
+// Haifa(32.794,34.990)->px(496,321), TLV->px(464,452), Jerusalem->px(531,510)
+var IMS_BOUNDS = [[29.4469, 31.7663], [34.5319, 37.8648]];
+var IMS_BOUNDS_ORIG = [[29.4469, 31.7663], [34.5319, 37.8648]];
+var analysisBounds = [[29.4469, 31.7663], [34.5319, 37.8648]];
 
 // Load proj4 dynamically if not already loaded
 var proj4Ready = false;
@@ -648,7 +647,7 @@ function toggleSrc(src) {
     
     if(src==='ims') {
       radarSource = 'ims';
-      analysisBounds = [[28.9484, 31.7637], [34.0672, 37.8626]];
+      analysisBounds = [[29.4469, 31.7663], [34.5319, 37.8648]];
       loadIMSRadar();
     }
     if(src==='rainviewer') { radarSource = 'rainviewer'; loadRainViewer(); }

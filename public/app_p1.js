@@ -9,11 +9,13 @@ var RAINVIEWER_API = 'https://api.rainviewer.com/public/weather-maps.json';
 // IMS Radar image base URL
 var IMS_RADAR_BASE = 'https://ims.gov.il/sites/default/files/ims_data/map_images/IMSRadar4GIS/IMSRadar4GIS_';
 
-// IMS radar image geo-bounds (WGS84)
-// Source: EXACT BOUNDS extracted from IMS Leaflet layer._bounds on 2026-02-17
-var IMS_BOUNDS = [[29.4469, 31.7663], [34.5319, 37.8648]];
-var IMS_BOUNDS_ORIG = [[29.4469, 31.7663], [34.5319, 37.8648]];
-var analysisBounds = [[29.4469, 31.7663], [34.5319, 37.8648]];
+// IMS radar image geo-bounds (WGS84 / EPSG:4326)
+// Source: IMS source code: var imageBounds = [[29.3, 34], [33.5, 36]]
+// Format: [[south, west], [north, east]]
+// Verified: IMS uses EPSG:3857 map with WGS84 bounds input to L.imageOverlay
+var IMS_BOUNDS = [[29.3, 34.0], [33.5, 36.0]];
+var IMS_BOUNDS_ORIG = [[29.3, 34.0], [33.5, 36.0]];
+var analysisBounds = [[29.3, 34.0], [33.5, 36.0]];
 
 // Define ITM projection for reprojection
 if(typeof proj4 !== 'undefined') {
@@ -284,7 +286,11 @@ function tryIMSPattern(ts, patternIdx, attempt, dateObj) {
     
     // Show image directly on map (IMSRadar4GIS is already WGS84-compatible)
     if(imsOverlay) map.removeLayer(imsOverlay);
+    console.log('📡 [מכ"מ] overlay bounds:', JSON.stringify(IMS_BOUNDS));
+    console.log('📡 [מכ"מ] map CRS:', map.options.crs.code);
     imsOverlay = L.imageOverlay(img.src, IMS_BOUNDS, {opacity: 0.6}).addTo(map);
+    var ob = imsOverlay.getBounds();
+    console.log('📡 [מכ"מ] overlay getBounds SW:', ob.getSouthWest().lat, ob.getSouthWest().lng, 'NE:', ob.getNorthEast().lat, ob.getNorthEast().lng);
     
     // Store image data for analysis
     var cvs = document.createElement('canvas');
@@ -564,7 +570,7 @@ function toggleSrc(src) {
     
     if(src==='ims') {
       radarSource = 'ims';
-      analysisBounds = [[29.4469, 31.7663], [34.5319, 37.8648]];
+      analysisBounds = [[29.3, 34.0], [33.5, 36.0]];
       loadIMSRadar();
     }
     if(src==='rainviewer') { radarSource = 'rainviewer'; loadRainViewer(); }

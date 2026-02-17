@@ -10,11 +10,12 @@ var RAINVIEWER_API = 'https://api.rainviewer.com/public/weather-maps.json';
 var IMS_RADAR_BASE = 'https://ims.gov.il/sites/default/files/ims_data/map_images/IMSRadar4GIS/IMSRadar4GIS_';
 
 // IMS radar image geo-bounds (WGS84 / EPSG:4326)
-// Source: IMS source code: var imageBounds = [[29.3, 34], [33.5, 36]]
-// The image is in ITM projection - needs reprojection via proj4
-var IMS_BOUNDS = [[29.3, 34.0], [33.5, 36.0]];
-var IMS_BOUNDS_ORIG = [[29.3, 34.0], [33.5, 36.0]];
-var analysisBounds = [[29.3, 34.0], [33.5, 36.0]];
+// Computed from IMS pixel analysis: Haifa(32.794,34.990)=pixel(497,237) in 940x940
+// TL point(33.5,34) at image fraction(0.367,0.111), BR point(29.3,36) at fraction(0.695,0.931)
+// Verification: Haifa error = 0.016° lat, 0.001° lon
+var IMS_BOUNDS = [[28.9484, 31.7637], [34.0672, 37.8626]];
+var IMS_BOUNDS_ORIG = [[28.9484, 31.7637], [34.0672, 37.8626]];
+var analysisBounds = [[28.9484, 31.7637], [34.0672, 37.8626]];
 
 // Load proj4 dynamically if not already loaded
 var proj4Ready = false;
@@ -363,22 +364,11 @@ function tryIMSPattern(ts, patternIdx, attempt, dateObj) {
     
     console.log('📡 [שמ"ט] ✅ נמצאה תמונה! ' + patternName + ' timestamp=' + ts + ', גודל=' + img.width + 'x' + img.height);
     
-    // Show image on map - reproject from ITM if proj4 is available
+    // Show image directly on map with computed correct bounds
     if(imsOverlay) map.removeLayer(imsOverlay);
-    
-    if(proj4Ready) {
-      console.log('📡 [מכ"מ] computing correct WGS84 bounds and reprojecting...');
-      var wgs84Bounds = computeWGS84Bounds(IMS_BOUNDS);
-      var reprojCanvas = reprojectRadarImage(img, wgs84Bounds);
-      var reprojUrl = reprojCanvas.toDataURL();
-      imsOverlay = L.imageOverlay(reprojUrl, wgs84Bounds, {opacity: 0.6}).addTo(map);
-      console.log('📡 [מכ"מ] reprojected overlay bounds:', JSON.stringify(wgs84Bounds));
-    } else {
-      console.warn('📡 [מכ"מ] proj4 not loaded - using raw bounds (position may be inaccurate)');
-      imsOverlay = L.imageOverlay(img.src, IMS_BOUNDS, {opacity: 0.6}).addTo(map);
-    }
+    imsOverlay = L.imageOverlay(img.src, IMS_BOUNDS, {opacity: 0.6}).addTo(map);
     var ob = imsOverlay.getBounds();
-    console.log('📡 [מכ"מ] final overlay SW:', ob.getSouthWest().lat.toFixed(4), ob.getSouthWest().lng.toFixed(4), 'NE:', ob.getNorthEast().lat.toFixed(4), ob.getNorthEast().lng.toFixed(4));
+    console.log('📡 [מכ"מ] overlay SW:', ob.getSouthWest().lat.toFixed(4), ob.getSouthWest().lng.toFixed(4), 'NE:', ob.getNorthEast().lat.toFixed(4), ob.getNorthEast().lng.toFixed(4));
     
     // Store image data for analysis
     var cvs = document.createElement('canvas');
@@ -658,7 +648,7 @@ function toggleSrc(src) {
     
     if(src==='ims') {
       radarSource = 'ims';
-      analysisBounds = [[29.3, 34.0], [33.5, 36.0]];
+      analysisBounds = [[28.9484, 31.7637], [34.0672, 37.8626]];
       loadIMSRadar();
     }
     if(src==='rainviewer') { radarSource = 'rainviewer'; loadRainViewer(); }
@@ -710,3 +700,11 @@ function debugColorTable(imgData, label) {
   }).join(',\n');
   console.log('[\n' + js + '\n]');
 }
+
+
+
+
+
+
+
+
